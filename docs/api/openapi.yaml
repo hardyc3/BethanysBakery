@@ -1,0 +1,2198 @@
+openapi: 3.1.0
+info:
+  title: Bethany's Bakery API
+  version: 0.1.0
+  description: |
+    Contract for the Bethany's Bakery customer and admin APIs.
+
+    Security notes:
+    - Customer web uses HttpOnly access/refresh cookies plus `X-CSRF-Token`.
+    - Admin app uses bearer tokens, a device API key (`X-Device-Key`), and a
+      Cloudflare-validated mTLS client certificate.
+    - Admin device pairing happens on a separate non-mTLS hostname.
+    - All instants are ISO-8601 UTC. Bake dates are `YYYY-MM-DD` in America/Denver.
+    - Money is integer USD cents.
+    - Errors use RFC 9457 Problem Details with a stable `code`.
+servers:
+  - url: https://bakery.example.com
+    description: Customer web and public/customer API
+  - url: https://admin-api.example.com
+    description: Admin API (mTLS + device key)
+  - url: http://localhost:8080
+    description: Local development
+tags:
+  - name: Public
+  - name: Customer Auth
+  - name: Customer
+  - name: Webhooks
+  - name: Admin Auth
+  - name: Admin Devices
+  - name: Admin Catalog
+  - name: Admin Menus
+  - name: Admin Orders
+  - name: Admin Notifications
+  - name: Admin System
+
+paths:
+  /api/v1/config:
+    get:
+      tags: [Public]
+      operationId: getPublicConfig
+      summary: Public bakery configuration
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicConfig' }
+
+  /api/v1/menu-dates:
+    get:
+      tags: [Public]
+      operationId: listPublicMenuDates
+      summary: List published upcoming bake dates
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PublicMenuDateSummary' }
+
+  /api/v1/menu-dates/{menuDateId}:
+    get:
+      tags: [Public]
+      operationId: getPublicMenuDate
+      summary: Published bake date with windows and offerings
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicMenuDate' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/offerings/{offeringId}:
+    get:
+      tags: [Public]
+      operationId: getPublicOffering
+      summary: Offering detail with ingredients, allergens, and customizations
+      parameters:
+        - { $ref: '#/components/parameters/OfferingId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicOffering' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/media/{mediaId}:
+    get:
+      tags: [Public]
+      operationId: getMedia
+      summary: Public image asset
+      parameters:
+        - { $ref: '#/components/parameters/MediaId' }
+        - { name: size, in: query, schema: { type: integer, enum: [400, 800, 1600] } }
+      responses:
+        '200':
+          description: Image bytes
+          content:
+            image/webp:
+              schema: { type: string, format: binary }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/auth/csrf:
+    get:
+      tags: [Customer Auth]
+      operationId: getCsrfToken
+      summary: Issue CSRF cookie and return the token
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CsrfToken' }
+
+  /api/v1/auth/otp/request:
+    post:
+      tags: [Customer Auth]
+      operationId: requestCustomerOtp
+      summary: Send a login code by email or SMS
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpRequest' }
+      responses:
+        '202':
+          description: Code sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpRequestResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/otp/verify:
+    post:
+      tags: [Customer Auth]
+      operationId: verifyCustomerOtp
+      summary: Verify a login code and start a session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpVerifyRequest' }
+      responses:
+        '200':
+          description: Authenticated. Sets HttpOnly cookies.
+          headers:
+            Set-Cookie:
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Customer Auth]
+      operationId: refreshCustomerSession
+      summary: Rotate the customer refresh token
+      responses:
+        '200':
+          description: Rotated. Sets new cookies.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Customer Auth]
+      operationId: logoutCustomer
+      summary: Revoke the current customer session
+      security: [{ customerCookie: [] }]
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+
+  /api/v1/me:
+    get:
+      tags: [Customer]
+      operationId: getCustomerProfile
+      summary: Current customer profile
+      security: [{ customerCookie: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    patch:
+      tags: [Customer]
+      operationId: updateCustomerProfile
+      summary: Update name, email, or phone
+      security: [{ customerCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerProfileUpdate' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/me/contact-verification/request:
+    post:
+      tags: [Customer]
+      operationId: requestContactVerification
+      summary: Send a code to verify a new email or phone
+      security: [{ customerCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ContactVerificationRequest' }
+      responses:
+        '202':
+          description: Code sent
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OtpRequestResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/me/contact-verification/confirm:
+    post:
+      tags: [Customer]
+      operationId: confirmContactVerification
+      summary: Confirm a new email or phone
+      security: [{ customerCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OtpVerifyRequest' }
+      responses:
+        '200':
+          description: Verified
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/me/notification-preferences:
+    get:
+      tags: [Customer]
+      operationId: getNotificationPreferences
+      summary: Customer notification preferences
+      security: [{ customerCookie: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPreferences' }
+    put:
+      tags: [Customer]
+      operationId: updateNotificationPreferences
+      summary: Update notification preferences and SMS consent
+      security: [{ customerCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationPreferencesWrite' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPreferences' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/me/orders:
+    get:
+      tags: [Customer]
+      operationId: listCustomerOrders
+      summary: Current customer's orders
+      security: [{ customerCookie: [] }]
+      parameters:
+        - { name: filter, in: query, schema: { $ref: '#/components/schemas/OrderFilter' } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderList' }
+
+  /api/v1/orders:
+    post:
+      tags: [Customer]
+      operationId: createOrder
+      summary: Create an order for one pickup window
+      security: [{ customerCookie: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateOrderRequest' }
+      responses:
+        '200':
+          description: Existing order returned for duplicate idempotency_key
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /api/v1/orders/{orderId}:
+    get:
+      tags: [Customer]
+      operationId: getCustomerOrder
+      summary: Customer order detail and payment instructions
+      security: [{ customerCookie: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/orders/{orderId}/cancel:
+    post:
+      tags: [Customer]
+      operationId: cancelCustomerOrder
+      summary: Cancel an order before the bake day starts
+      security: [{ customerCookie: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelOrderRequest' }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/v1/webhooks/textbee:
+    post:
+      tags: [Webhooks]
+      operationId: receiveTextbeeWebhook
+      summary: Textbee delivery and STOP/START events
+      parameters:
+        - { name: X-Textbee-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TextbeeWebhook' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /admin/v1/devices/pair:
+    post:
+      tags: [Admin Devices]
+      operationId: pairAdminDevice
+      summary: Pair a new Android device using a one-time code
+      description: |
+        Served on the non-mTLS pairing hostname only. The server verifies the
+        one-time code, signs the CSR with the device CA, stores the API key hash,
+        and returns the client certificate and API key once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PairDeviceRequest' }
+      responses:
+        '201':
+          description: Paired
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PairDeviceResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /admin/v1/auth/login:
+    post:
+      tags: [Admin Auth]
+      operationId: loginAdmin
+      summary: Admin login with password, TOTP, device key, and mTLS
+      security: [{ deviceApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminLoginRequest' }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+
+  /admin/v1/auth/refresh:
+    post:
+      tags: [Admin Auth]
+      operationId: refreshAdminSession
+      summary: Rotate the admin refresh token
+      security: [{ deviceApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200':
+          description: Rotated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /admin/v1/auth/logout:
+    post:
+      tags: [Admin Auth]
+      operationId: logoutAdmin
+      summary: Revoke the current admin session
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+
+  /admin/v1/me:
+    get:
+      tags: [Admin Auth]
+      operationId: getAdminProfile
+      summary: Current admin profile
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminProfile' }
+
+  /admin/v1/app-info:
+    get:
+      tags: [Admin System]
+      operationId: getAdminAppInfo
+      summary: Admin app version and update info
+      description: Available to any paired device before login so the update gate can run.
+      security: [{ deviceApiKey: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminAppInfo' }
+
+  /admin/v1/devices:
+    get:
+      tags: [Admin Devices]
+      operationId: listAdminDevices
+      summary: List paired devices
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AdminDevice' }
+
+  /admin/v1/devices/{deviceId}:
+    delete:
+      tags: [Admin Devices]
+      operationId: revokeAdminDevice
+      summary: Revoke a device
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: deviceId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+
+  /admin/v1/devices/{deviceId}/push-token:
+    put:
+      tags: [Admin Devices]
+      operationId: updateAdminPushToken
+      summary: Register or clear the device FCM token
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: deviceId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PushTokenRequest' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+
+  /admin/v1/summary:
+    get:
+      tags: [Admin System]
+      operationId: getAdminSummary
+      summary: Counts for a bake date
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AdminSummary' }
+
+  /admin/v1/item-templates:
+    get:
+      tags: [Admin Catalog]
+      operationId: listItemTemplates
+      summary: List item templates
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: active, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ItemTemplate' }
+    post:
+      tags: [Admin Catalog]
+      operationId: createItemTemplate
+      summary: Create an item template
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemTemplateWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemTemplate' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /admin/v1/item-templates/{templateId}:
+    get:
+      tags: [Admin Catalog]
+      operationId: getItemTemplate
+      summary: Item template detail
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: templateId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemTemplate' }
+    put:
+      tags: [Admin Catalog]
+      operationId: replaceItemTemplate
+      summary: Replace an item template, including customization groups
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: templateId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ItemTemplateWrite' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ItemTemplate' }
+    delete:
+      tags: [Admin Catalog]
+      operationId: deactivateItemTemplate
+      summary: Deactivate an item template
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: templateId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+
+  /admin/v1/media:
+    post:
+      tags: [Admin Catalog]
+      operationId: uploadMedia
+      summary: Upload and normalize an image
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Uploaded
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Media' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '413':
+          description: File too large
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /admin/v1/media/{mediaId}:
+    delete:
+      tags: [Admin Catalog]
+      operationId: deleteMedia
+      summary: Delete unused media
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MediaId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/menus:
+    get:
+      tags: [Admin Menus]
+      operationId: listMenus
+      summary: List menus
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/MenuStatus' } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MenuSummary' }
+    post:
+      tags: [Admin Menus]
+      operationId: createMenu
+      summary: Create a draft menu
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Menu' }
+
+  /admin/v1/menus/{menuId}:
+    get:
+      tags: [Admin Menus]
+      operationId: getMenu
+      summary: Menu with dates, windows, and offerings
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Menu' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Admin Menus]
+      operationId: updateMenu
+      summary: Update draft menu fields
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuWrite' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Menu' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Admin Menus]
+      operationId: deleteDraftMenu
+      summary: Delete a draft menu
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/menus/{menuId}/publish:
+    post:
+      tags: [Admin Menus]
+      operationId: publishMenu
+      summary: Publish a menu and schedule the new-menu notification
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PublishMenuRequest' }
+      responses:
+        '200':
+          description: Published
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Menu' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/menus/{menuId}/cancel:
+    post:
+      tags: [Admin Menus]
+      operationId: cancelMenu
+      summary: Cancel a menu and its active orders
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuId' }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelMenuRequest' }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Menu' }
+
+  /admin/v1/menus/{menuId}/dates:
+    post:
+      tags: [Admin Menus]
+      operationId: addMenuDate
+      summary: Add a bake date to a draft menu
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuDateWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuDate' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/menu-dates/{menuDateId}:
+    get:
+      tags: [Admin Menus]
+      operationId: getMenuDate
+      summary: Bake date with windows and offerings
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuDate' }
+    put:
+      tags: [Admin Menus]
+      operationId: updateMenuDate
+      summary: Update a draft bake date
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MenuDateWrite' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuDate' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Admin Menus]
+      operationId: deleteDraftMenuDate
+      summary: Delete a draft bake date
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/menu-dates/{menuDateId}/cancel:
+    post:
+      tags: [Admin Menus]
+      operationId: cancelMenuDate
+      summary: Cancel a bake date and its active orders
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelMenuDateRequest' }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MenuDate' }
+
+  /admin/v1/menu-dates/{menuDateId}/remind:
+    post:
+      tags: [Admin Notifications]
+      operationId: sendMenuDateReminder
+      summary: Send the day-before reminder now
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      responses:
+        '202': { $ref: '#/components/responses/Accepted' }
+
+  /admin/v1/menu-dates/{menuDateId}/pickup-windows:
+    get:
+      tags: [Admin Menus]
+      operationId: listPickupWindows
+      summary: List pickup windows for a bake date
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/PickupWindow' }
+    post:
+      tags: [Admin Menus]
+      operationId: createPickupWindow
+      summary: Add a pickup window
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PickupWindowWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PickupWindow' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /admin/v1/pickup-windows/{windowId}:
+    put:
+      tags: [Admin Menus]
+      operationId: updatePickupWindow
+      summary: Update a pickup window
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: windowId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PickupWindowWrite' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PickupWindow' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Admin Menus]
+      operationId: deletePickupWindow
+      summary: Delete an unused pickup window
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: windowId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/menu-dates/{menuDateId}/offerings:
+    get:
+      tags: [Admin Menus]
+      operationId: listOfferings
+      summary: List offerings for a bake date
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Offering' }
+    post:
+      tags: [Admin Menus]
+      operationId: createOffering
+      summary: Add an offering, snapshotting the item template
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/MenuDateId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OfferingWrite' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offering' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/offerings/{offeringId}:
+    get:
+      tags: [Admin Menus]
+      operationId: getOffering
+      summary: Offering detail
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OfferingId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offering' }
+    put:
+      tags: [Admin Menus]
+      operationId: updateOffering
+      summary: Update price, quantity, windows, or customization snapshot
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OfferingId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OfferingWrite' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Offering' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Admin Menus]
+      operationId: cancelOffering
+      summary: Cancel an offering with no active orders
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OfferingId' }
+      responses:
+        '204': { $ref: '#/components/responses/NoContent' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/orders:
+    get:
+      tags: [Admin Orders]
+      operationId: listAdminOrders
+      summary: Orders filtered by bake date and status
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: date, in: query, schema: { type: string, format: date } }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/OrderStatus' } }
+        - { name: paymentStatus, in: query, schema: { $ref: '#/components/schemas/PaymentStatus' } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OrderList' }
+
+  /admin/v1/orders/{orderId}:
+    get:
+      tags: [Admin Orders]
+      operationId: getAdminOrder
+      summary: Order detail
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/v1/orders/{orderId}/accept:
+    post:
+      tags: [Admin Orders]
+      operationId: acceptOrder
+      summary: Accept a pending order before cutoff
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      responses:
+        '200':
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/orders/{orderId}/reject:
+    post:
+      tags: [Admin Orders]
+      operationId: rejectOrder
+      summary: Reject a pending order and release inventory
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RejectOrderRequest' }
+      responses:
+        '200':
+          description: Rejected
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/orders/{orderId}/ready:
+    post:
+      tags: [Admin Orders]
+      operationId: markOrderReady
+      summary: Mark an accepted order ready and notify the customer
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      responses:
+        '200':
+          description: Ready
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/orders/{orderId}/completed:
+    post:
+      tags: [Admin Orders]
+      operationId: markOrderCompleted
+      summary: Mark a ready order picked up
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      responses:
+        '200':
+          description: Completed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/orders/{orderId}/delay:
+    post:
+      tags: [Admin Orders]
+      operationId: notifyOrderDelayed
+      summary: Notify the customer that an order is delayed
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DelayOrderRequest' }
+      responses:
+        '202': { $ref: '#/components/responses/Accepted' }
+
+  /admin/v1/orders/{orderId}/cancel:
+    post:
+      tags: [Admin Orders]
+      operationId: cancelAdminOrder
+      summary: Cancel an active order with a reason
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AdminCancelOrderRequest' }
+      responses:
+        '200':
+          description: Cancelled
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/orders/{orderId}/payment:
+    put:
+      tags: [Admin Orders]
+      operationId: updateOrderPayment
+      summary: Mark an order paid or unpaid
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/OrderId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentUpdateRequest' }
+      responses:
+        '200':
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Order' }
+
+  /admin/v1/bake-list:
+    get:
+      tags: [Admin Orders]
+      operationId: getBakeList
+      summary: Aggregated quantities to bake for a date
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: date, in: query, required: true, schema: { type: string, format: date } }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BakeList' }
+
+  /admin/v1/notifications:
+    get:
+      tags: [Admin Notifications]
+      operationId: listNotifications
+      summary: Notification queue and delivery failures
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/NotificationStatus' } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationList' }
+
+  /admin/v1/notifications/{notificationId}/retry:
+    post:
+      tags: [Admin Notifications]
+      operationId: retryNotification
+      summary: Retry a failed notification
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: notificationId, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Queued
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Notification' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/v1/audit-events:
+    get:
+      tags: [Admin System]
+      operationId: listAuditEvents
+      summary: Audit events for an entity or recent activity
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { name: entityType, in: query, schema: { type: string } }
+        - { name: entityId, in: query, schema: { type: string, format: uuid } }
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/AuditEvent' }
+
+components:
+  securitySchemes:
+    customerCookie:
+      type: apiKey
+      in: cookie
+      name: bb_access
+    adminBearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    deviceApiKey:
+      type: apiKey
+      in: header
+      name: X-Device-Key
+
+  parameters:
+    MenuId:
+      name: menuId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MenuDateId:
+      name: menuDateId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OfferingId:
+      name: offeringId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MediaId:
+      name: mediaId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Size:
+      name: size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+
+  responses:
+    NoContent:
+      description: No content
+    Accepted:
+      description: Accepted
+    BadRequest:
+      description: Invalid request
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Unauthorized:
+      description: Authentication required or failed
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Forbidden:
+      description: Not allowed
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    NotFound:
+      description: Not found
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: State conflict, sold out, cutoff passed, or capacity full
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    TooManyRequests:
+      description: Rate limited
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code:
+          type: string
+          examples:
+            - VALIDATION_ERROR
+            - SOLD_OUT
+            - WINDOW_FULL
+            - CUTOFF_PASSED
+            - CANCELLATION_CLOSED
+            - RATE_LIMITED
+        requestId: { type: string }
+        errors:
+          type: array
+          items: { $ref: '#/components/schemas/FieldError' }
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field: { type: string }
+        message: { type: string }
+
+    PublicConfig:
+      type: object
+      required: [bakeryName, timezone, pickupAddress, mapsUrl, supportEmail]
+      properties:
+        bakeryName: { type: string }
+        timezone: { type: string, example: America/Denver }
+        pickupAddress: { type: string }
+        mapsUrl: { type: string, format: uri }
+        supportEmail: { type: string, format: email }
+        orderCutoffHours: { type: integer, example: 12 }
+
+    CsrfToken:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+
+    OtpRequest:
+      type: object
+      required: [channel, destination]
+      properties:
+        channel: { $ref: '#/components/schemas/OtpChannel' }
+        destination: { type: string }
+    OtpRequestResult:
+      type: object
+      required: [challengeId, channel, destinationMasked, expiresAt, resendAfterSeconds]
+      properties:
+        challengeId: { type: string, format: uuid }
+        channel: { $ref: '#/components/schemas/OtpChannel' }
+        destinationMasked: { type: string, example: b***@example.com }
+        expiresAt: { type: string, format: date-time }
+        resendAfterSeconds: { type: integer }
+    OtpVerifyRequest:
+      type: object
+      required: [challengeId, code]
+      properties:
+        challengeId: { type: string, format: uuid }
+        code: { type: string, pattern: '^[0-9]{6}$' }
+    OtpChannel:
+      type: string
+      enum: [EMAIL, SMS]
+
+    Customer:
+      type: object
+      required: [id, name, emailVerified, phoneVerified, smsConsent, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: [string, 'null'] }
+        email: { type: [string, 'null'], format: email }
+        phone: { type: [string, 'null'] }
+        emailVerified: { type: boolean }
+        phoneVerified: { type: boolean }
+        smsConsent: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    CustomerSession:
+      type: object
+      required: [customer]
+      properties:
+        customer: { $ref: '#/components/schemas/Customer' }
+    CustomerProfileUpdate:
+      type: object
+      minProperties: 1
+      properties:
+        name: { type: string, maxLength: 120 }
+    ContactVerificationRequest:
+      type: object
+      required: [channel, destination]
+      properties:
+        channel: { $ref: '#/components/schemas/OtpChannel' }
+        destination: { type: string }
+
+    NotificationPreferences:
+      type: object
+      required: [smsConsent, smsOptedOut, preferences]
+      properties:
+        smsConsent: { type: boolean }
+        smsOptedOut: { type: boolean, description: True after a STOP-family webhook until the customer explicitly re-consents. }
+        preferences:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationPreference' }
+    NotificationPreference:
+      type: object
+      required: [eventType, emailEnabled, smsEnabled]
+      properties:
+        eventType: { $ref: '#/components/schemas/NotificationEventType' }
+        emailEnabled: { type: boolean }
+        smsEnabled: { type: boolean }
+    NotificationPreferencesWrite:
+      type: object
+      required: [smsConsent, preferences]
+      properties:
+        smsConsent: { type: boolean }
+        preferences:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationPreference' }
+    NotificationEventType:
+      type: string
+      enum:
+        - MENU_PUBLISHED
+        - ORDER_REMINDER
+        - ORDER_ACCEPTED
+        - ORDER_READY
+        - ORDER_DELAYED
+        - ORDER_REJECTED
+        - ORDER_CANCELLED
+        - ORDER_EXPIRED
+        - MENU_CANCELLED
+
+    PublicMenuDateSummary:
+      type: object
+      required: [id, bakeDate, status, windowCount, offeringCount, orderCutoffAt]
+      properties:
+        id: { type: string, format: uuid }
+        bakeDate: { type: string, format: date }
+        status: { type: string, enum: [PUBLISHED] }
+        windowCount: { type: integer }
+        offeringCount: { type: integer }
+        orderCutoffAt: { type: string, format: date-time }
+    PublicMenuDate:
+      type: object
+      required: [id, bakeDate, status, pickupWindows, offerings]
+      properties:
+        id: { type: string, format: uuid }
+        menuId: { type: string, format: uuid }
+        title: { type: string }
+        notes: { type: [string, 'null'] }
+        bakeDate: { type: string, format: date }
+        status: { type: string, enum: [PUBLISHED] }
+        pickupWindows:
+          type: array
+          items: { $ref: '#/components/schemas/PublicPickupWindow' }
+        offerings:
+          type: array
+          items: { $ref: '#/components/schemas/PublicOffering' }
+    PublicPickupWindow:
+      type: object
+      required: [id, label, startAt, endAt, availableCapacity]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        availableCapacity: { type: integer }
+        orderCutoffAt: { type: string, format: date-time }
+    PublicOffering:
+      type: object
+      required: [id, name, priceCents, availableQuantity, soldOut, windowIds, customizationGroups]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        photoUrl: { type: [string, 'null'], format: uri }
+        photoVariants:
+          type: [object, 'null']
+          description: Map of requested pixel size to absolute URL. Keys are 400, 800, 1600.
+          additionalProperties: { type: string, format: uri }
+        priceCents: { type: integer, minimum: 0 }
+        availableQuantity: { type: integer, minimum: 0 }
+        soldOut: { type: boolean }
+        ingredientsText: { type: [string, 'null'] }
+        allergenTags:
+          type: array
+          items: { type: string }
+        windowIds:
+          type: array
+          items: { type: string, format: uuid }
+        customizationGroups:
+          type: array
+          items: { $ref: '#/components/schemas/PublicCustomizationGroup' }
+    PublicCustomizationGroup:
+      type: object
+      required: [id, name, selectionType, required, minSelections, maxSelections, options]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        selectionType: { type: string, enum: [SINGLE, MULTI] }
+        required: { type: boolean }
+        minSelections: { type: integer }
+        maxSelections: { type: integer }
+        options:
+          type: array
+          items: { $ref: '#/components/schemas/PublicCustomizationOption' }
+    PublicCustomizationOption:
+      type: object
+      required: [id, name, priceDeltaCents, available]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        priceDeltaCents: { type: integer }
+        available: { type: boolean }
+
+    CreateOrderRequest:
+      type: object
+      required: [menuDateId, pickupWindowId, items]
+      properties:
+        menuDateId: { type: string, format: uuid }
+        pickupWindowId: { type: string, format: uuid }
+        idempotency_key:
+          type: [string, 'null']
+          maxLength: 128
+          description: Client-generated key for safe retries. Reusing a key returns the existing order for the same customer.
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CreateOrderItem' }
+        notes: { type: [string, 'null'], maxLength: 500 }
+    CreateOrderItem:
+      type: object
+      required: [offeringId, quantity]
+      properties:
+        offeringId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 99 }
+        optionIds:
+          type: array
+          items: { type: string, format: uuid }
+        notes: { type: [string, 'null'], maxLength: 300 }
+    CancelOrderRequest:
+      type: object
+      properties:
+        reason: { type: [string, 'null'], maxLength: 500 }
+    AdminCancelOrderRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    RejectOrderRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 1, maxLength: 500 }
+    DelayOrderRequest:
+      type: object
+      properties:
+        reason: { type: [string, 'null'], maxLength: 500 }
+    PaymentUpdateRequest:
+      type: object
+      required: [paid]
+      properties:
+        paid: { type: boolean }
+        method: { type: [string, 'null'], enum: [VENMO, CASH, OTHER, null] }
+
+    Order:
+      type: object
+      required:
+        - id
+        - orderNumber
+        - status
+        - paymentStatus
+        - menuDateId
+        - bakeDate
+        - pickupWindow
+        - customer
+        - lines
+        - subtotalCents
+        - totalCents
+        - expiresAt
+        - createdAt
+      properties:
+        id: { type: string, format: uuid }
+        orderNumber: { type: string, example: BB-20261120-0001 }
+        status: { $ref: '#/components/schemas/OrderStatus' }
+        paymentStatus: { $ref: '#/components/schemas/PaymentStatus' }
+        paymentMethod: { type: [string, 'null'], enum: [VENMO, CASH, OTHER, null] }
+        menuDateId: { type: string, format: uuid }
+        bakeDate: { type: string, format: date }
+        pickupWindow: { $ref: '#/components/schemas/PickupWindowRef' }
+        customer: { $ref: '#/components/schemas/OrderCustomer' }
+        lines:
+          type: array
+          items: { $ref: '#/components/schemas/OrderLine' }
+        subtotalCents: { type: integer }
+        totalCents: { type: integer }
+        notes: { type: [string, 'null'] }
+        rejectionReason: { type: [string, 'null'] }
+        cancellationReason: { type: [string, 'null'] }
+        cancelledBy: { type: [string, 'null'], enum: [CUSTOMER, ADMIN, SYSTEM, null] }
+        acceptedAt: { type: [string, 'null'], format: date-time }
+        readyAt: { type: [string, 'null'], format: date-time }
+        completedAt: { type: [string, 'null'], format: date-time }
+        paidAt: { type: [string, 'null'], format: date-time }
+        delayNotifiedAt: { type: [string, 'null'], format: date-time }
+        delayReason: { type: [string, 'null'] }
+        expiresAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        paymentInstructions: { $ref: '#/components/schemas/PaymentInstructions' }
+    PickupWindowRef:
+      type: object
+      required: [id, label, startAt, endAt]
+      properties:
+        id: { type: string, format: uuid }
+        label: { type: string }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+    OrderCustomer:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+        email: { type: [string, 'null'] }
+        phone: { type: [string, 'null'] }
+    OrderLine:
+      type: object
+      required: [id, offeringId, itemName, unitPriceCents, quantity, lineTotalCents, options]
+      properties:
+        id: { type: string, format: uuid }
+        offeringId: { type: string, format: uuid }
+        itemName: { type: string }
+        unitPriceCents: { type: integer }
+        quantity: { type: integer }
+        lineTotalCents: { type: integer }
+        options:
+          type: array
+          items: { $ref: '#/components/schemas/OrderLineOption' }
+        notes: { type: [string, 'null'] }
+    OrderLineOption:
+      type: object
+      required: [groupName, optionName, priceDeltaCents]
+      properties:
+        groupName: { type: string }
+        optionName: { type: string }
+        priceDeltaCents: { type: integer }
+    PaymentInstructions:
+      type: object
+      required: [venmoHandle, venmoDisplayName, amountCents, note]
+      properties:
+        venmoHandle: { type: string }
+        venmoDisplayName: { type: string }
+        amountCents: { type: integer }
+        note: { type: string }
+        venmoDeepLink: { type: [string, 'null'], format: uri }
+    OrderList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Order' }
+        total: { type: integer }
+    OrderStatus:
+      type: string
+      enum: [PENDING, ACCEPTED, READY, COMPLETED, REJECTED, CANCELLED, EXPIRED]
+    OrderFilter:
+      type: string
+      description: ACTIVE = PENDING, ACCEPTED, READY. COMPLETED excludes terminal failures. CANCELLED = REJECTED, CANCELLED, EXPIRED.
+      enum: [ALL, ACTIVE, COMPLETED, CANCELLED]
+    PaymentStatus:
+      type: string
+      enum: [UNPAID, PAID]
+
+    TextbeeWebhook:
+      type: object
+      required: [from, message]
+      properties:
+        from: { type: string }
+        message: { type: string }
+        providerMessageId: { type: [string, 'null'] }
+        receivedAt: { type: [string, 'null'], format: date-time }
+
+    PairDeviceRequest:
+      type: object
+      required: [pairingCode, deviceName, publicKeyPem, csrPem]
+      properties:
+        pairingCode: { type: string }
+        deviceName: { type: string, maxLength: 80 }
+        publicKeyPem: { type: string }
+        csrPem: { type: string }
+        appVersion: { type: string }
+    PairDeviceResponse:
+      type: object
+      required: [deviceId, apiKey, clientCertificatePem, caCertificatePem, certificateExpiresAt]
+      properties:
+        deviceId: { type: string, format: uuid }
+        apiKey: { type: string }
+        clientCertificatePem: { type: string }
+        caCertificatePem: { type: string }
+        certificateExpiresAt: { type: string, format: date-time }
+    AdminLoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string }
+        totpCode: { type: [string, 'null'] }
+        recoveryCode: { type: [string, 'null'] }
+        appVersion: { type: [string, 'null'] }
+    AdminSession:
+      type: object
+      required: [accessToken, refreshToken, expiresIn, admin]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: integer, example: 900 }
+        admin: { $ref: '#/components/schemas/AdminProfile' }
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string }
+    AdminProfile:
+      type: object
+      required: [id, email, name]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+    AdminDevice:
+      type: object
+      required: [id, name, platform, status, pairedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        platform: { type: string, enum: [ANDROID] }
+        status: { type: string, enum: [ACTIVE, REVOKED] }
+        pairedAt: { type: string, format: date-time }
+        lastSeenAt: { type: [string, 'null'], format: date-time }
+        revokedAt: { type: [string, 'null'], format: date-time }
+        appVersion: { type: [string, 'null'] }
+        fcmRegistered: { type: boolean }
+    PushTokenRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: [string, 'null'] }
+        appVersion: { type: [string, 'null'] }
+    AdminAppInfo:
+      type: object
+      required: [latestVersion, minVersion, downloadUrl]
+      properties:
+        latestVersion: { type: string }
+        minVersion: { type: string }
+        downloadUrl: { type: string, format: uri }
+        releaseNotes: { type: [string, 'null'] }
+    AdminSummary:
+      type: object
+      required: [bakeDate, pending, accepted, ready, completed, unpaid]
+      properties:
+        bakeDate: { type: string, format: date }
+        pending: { type: integer }
+        accepted: { type: integer }
+        ready: { type: integer }
+        completed: { type: integer }
+        unpaid: { type: integer }
+
+    Media:
+      type: object
+      required: [id, url, width, height, sizeBytes]
+      properties:
+        id: { type: string, format: uuid }
+        url: { type: string, format: uri }
+        width: { type: integer }
+        height: { type: integer }
+        sizeBytes: { type: integer }
+        variants:
+          type: object
+          additionalProperties: { type: string, format: uri }
+
+    ItemTemplate:
+      type: object
+      required: [id, name, active, allergenTags, customizationGroups, version]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        photo: { $ref: '#/components/schemas/Media' }
+        ingredientsText: { type: [string, 'null'] }
+        allergenTags:
+          type: array
+          items: { type: string }
+        active: { type: boolean }
+        customizationGroups:
+          type: array
+          items: { $ref: '#/components/schemas/CustomizationGroup' }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ItemTemplateWrite:
+      type: object
+      required: [name, active]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        photoMediaId: { type: [string, 'null'], format: uuid }
+        ingredientsText: { type: [string, 'null'], maxLength: 4000 }
+        allergenTags:
+          type: array
+          maxItems: 20
+          items: { type: string, maxLength: 60 }
+        active: { type: boolean }
+        customizationGroups:
+          type: array
+          items: { $ref: '#/components/schemas/CustomizationGroupWrite' }
+    CustomizationGroup:
+      type: object
+      required: [id, name, selectionType, required, minSelections, maxSelections, options]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        selectionType: { type: string, enum: [SINGLE, MULTI] }
+        required: { type: boolean }
+        minSelections: { type: integer }
+        maxSelections: { type: integer }
+        sortOrder: { type: integer }
+        options:
+          type: array
+          items: { $ref: '#/components/schemas/CustomizationOption' }
+    CustomizationOption:
+      type: object
+      required: [id, name, priceDeltaCents, available]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        priceDeltaCents: { type: integer, minimum: 0 }
+        available: { type: boolean }
+        sortOrder: { type: integer }
+    CustomizationGroupWrite:
+      type: object
+      required: [name, selectionType, required, minSelections, maxSelections, options]
+      properties:
+        id: { type: [string, 'null'], format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        selectionType: { type: string, enum: [SINGLE, MULTI] }
+        required: { type: boolean }
+        minSelections: { type: integer, minimum: 0 }
+        maxSelections: { type: integer, minimum: 1 }
+        sortOrder: { type: integer }
+        options:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CustomizationOptionWrite' }
+    CustomizationOptionWrite:
+      type: object
+      required: [name, priceDeltaCents]
+      properties:
+        id: { type: [string, 'null'], format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        priceDeltaCents: { type: integer, minimum: 0 }
+        available: { type: boolean, default: true }
+        sortOrder: { type: integer }
+
+    MenuStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED, CANCELLED]
+    MenuSummary:
+      type: object
+      required: [id, title, status, dates]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        status: { $ref: '#/components/schemas/MenuStatus' }
+        firstBakeDate: { type: [string, 'null'], format: date }
+        dates:
+          type: array
+          items: { type: string, format: date }
+        publishedAt: { type: [string, 'null'], format: date-time }
+        updatedAt: { type: string, format: date-time }
+    Menu:
+      type: object
+      required: [id, title, status, notificationEnabled, dates, version]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        notes: { type: [string, 'null'] }
+        status: { $ref: '#/components/schemas/MenuStatus' }
+        notificationEnabled: { type: boolean }
+        notifyAt: { type: [string, 'null'], format: date-time }
+        notifySentAt: { type: [string, 'null'], format: date-time }
+        publishedAt: { type: [string, 'null'], format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        cancellationReason: { type: [string, 'null'] }
+        dates:
+          type: array
+          items: { $ref: '#/components/schemas/MenuDate' }
+        version: { type: integer }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    MenuWrite:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        notes: { type: [string, 'null'], maxLength: 2000 }
+    PublishMenuRequest:
+      type: object
+      required: [notificationEnabled]
+      properties:
+        notificationEnabled: { type: boolean }
+        notifyAt: { type: [string, 'null'], format: date-time }
+    CancelMenuRequest:
+      type: object
+      properties:
+        reason: { type: [string, 'null'], maxLength: 500 }
+    CancelMenuDateRequest:
+      type: object
+      properties:
+        reason: { type: [string, 'null'], maxLength: 500 }
+    MenuDate:
+      type: object
+      required: [id, menuId, bakeDate, status, pickupWindows, offerings]
+      properties:
+        id: { type: string, format: uuid }
+        menuId: { type: string, format: uuid }
+        bakeDate: { type: string, format: date }
+        status: { type: string, enum: [DRAFT, PUBLISHED, CANCELLED] }
+        reminderSentAt: { type: [string, 'null'], format: date-time }
+        cancelledAt: { type: [string, 'null'], format: date-time }
+        cancellationReason: { type: [string, 'null'] }
+        pickupWindows:
+          type: array
+          items: { $ref: '#/components/schemas/PickupWindow' }
+        offerings:
+          type: array
+          items: { $ref: '#/components/schemas/Offering' }
+        version: { type: integer }
+    MenuDateWrite:
+      type: object
+      required: [bakeDate]
+      properties:
+        bakeDate: { type: string, format: date }
+    PickupWindow:
+      type: object
+      required: [id, menuDateId, label, startAt, endAt, maxOrders, reservedOrders, availableCapacity, status]
+      properties:
+        id: { type: string, format: uuid }
+        menuDateId: { type: string, format: uuid }
+        label: { type: string }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        maxOrders: { type: integer }
+        reservedOrders: { type: integer }
+        availableCapacity: { type: integer }
+        orderCutoffAt: { type: string, format: date-time }
+        status: { type: string, enum: [ACTIVE, CANCELLED] }
+        version: { type: integer }
+    PickupWindowWrite:
+      type: object
+      required: [label, startAt, endAt, maxOrders]
+      properties:
+        label: { type: string, maxLength: 60 }
+        startAt: { type: string, format: date-time }
+        endAt: { type: string, format: date-time }
+        maxOrders: { type: integer, minimum: 1 }
+
+    Offering:
+      type: object
+      required:
+        - id
+        - menuDateId
+        - itemTemplateId
+        - name
+        - priceCents
+        - quantityLimit
+        - reservedCount
+        - availableQuantity
+        - status
+        - windowIds
+        - customizationGroups
+        - version
+      properties:
+        id: { type: string, format: uuid }
+        menuDateId: { type: string, format: uuid }
+        itemTemplateId: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: [string, 'null'] }
+        photo: { $ref: '#/components/schemas/Media' }
+        ingredientsText: { type: [string, 'null'] }
+        allergenTags:
+          type: array
+          maxItems: 20
+          items: { type: string }
+        priceCents: { type: integer, minimum: 0, maximum: 99999 }
+        quantityLimit: { type: integer, minimum: 1, maximum: 9999 }
+        reservedCount: { type: integer, minimum: 0 }
+        availableQuantity: { type: integer, minimum: 0 }
+        maxPerCustomer: { type: [integer, 'null'], minimum: 1, maximum: 9999 }
+        status: { type: string, enum: [ACTIVE, CANCELLED] }
+        windowIds:
+          type: array
+          items: { type: string, format: uuid }
+        customizationGroups:
+          type: array
+          items: { $ref: '#/components/schemas/OfferingOptionGroup' }
+        version: { type: integer }
+    OfferingWrite:
+      type: object
+      required: [itemTemplateId, priceCents, quantityLimit, windowIds]
+      properties:
+        itemTemplateId: { type: string, format: uuid }
+        name: { type: [string, 'null'], maxLength: 120 }
+        description: { type: [string, 'null'], maxLength: 2000 }
+        photoMediaId: { type: [string, 'null'], format: uuid }
+        ingredientsText: { type: [string, 'null'], maxLength: 4000 }
+        allergenTags:
+          type: [array, 'null']
+          maxItems: 20
+          items: { type: string }
+        priceCents: { type: integer, minimum: 0, maximum: 99999 }
+        quantityLimit: { type: integer, minimum: 1, maximum: 9999 }
+        maxPerCustomer: { type: [integer, 'null'], minimum: 1, maximum: 9999 }
+        windowIds:
+          type: array
+          minItems: 1
+          items: { type: string, format: uuid }
+        customizationGroups:
+          type: [array, 'null']
+          items: { $ref: '#/components/schemas/OfferingOptionGroupWrite' }
+    OfferingOptionGroup:
+      type: object
+      required: [id, name, selectionType, required, minSelections, maxSelections, options]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        selectionType: { type: string, enum: [SINGLE, MULTI] }
+        required: { type: boolean }
+        minSelections: { type: integer }
+        maxSelections: { type: integer }
+        sortOrder: { type: integer }
+        options:
+          type: array
+          items: { $ref: '#/components/schemas/OfferingOption' }
+    OfferingOption:
+      type: object
+      required: [id, name, priceDeltaCents, available]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        priceDeltaCents: { type: integer }
+        available: { type: boolean }
+        sortOrder: { type: integer }
+    OfferingOptionGroupWrite:
+      type: object
+      required: [name, selectionType, required, minSelections, maxSelections, options]
+      properties:
+        id: { type: [string, 'null'], format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        selectionType: { type: string, enum: [SINGLE, MULTI] }
+        required: { type: boolean }
+        minSelections: { type: integer, minimum: 0 }
+        maxSelections: { type: integer, minimum: 1 }
+        sortOrder: { type: integer }
+        options:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/OfferingOptionWrite' }
+    OfferingOptionWrite:
+      type: object
+      required: [name, priceDeltaCents]
+      properties:
+        id: { type: [string, 'null'], format: uuid }
+        name: { type: string, minLength: 1, maxLength: 80 }
+        priceDeltaCents: { type: integer, minimum: 0 }
+        available: { type: boolean, default: true }
+        sortOrder: { type: integer }
+
+    BakeList:
+      type: object
+      required: [bakeDate, generatedAt, orderCount, items]
+      properties:
+        bakeDate: { type: string, format: date }
+        generatedAt: { type: string, format: date-time }
+        orderCount: { type: integer }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/BakeListItem' }
+    BakeListItem:
+      type: object
+      required: [offeringId, itemName, totalQuantity, options]
+      properties:
+        offeringId: { type: string, format: uuid }
+        itemName: { type: string }
+        totalQuantity: { type: integer }
+        options:
+          type: array
+          items: { $ref: '#/components/schemas/BakeListOptionCount' }
+    BakeListOptionCount:
+      type: object
+      required: [groupName, optionName, count]
+      properties:
+        groupName: { type: string }
+        optionName: { type: string }
+        count: { type: integer }
+
+    NotificationStatus:
+      type: string
+      enum: [QUEUED, SENDING, SENT, FAILED, SUPPRESSED]
+    Notification:
+      type: object
+      required: [id, recipientType, eventType, status, createdAt, attempts, deliveries]
+      properties:
+        id: { type: string, format: uuid }
+        recipientType: { type: string, enum: [CUSTOMER, ADMIN] }
+        eventType: { type: string }
+        entityType: { type: string }
+        entityId: { type: string, format: uuid }
+        status: { $ref: '#/components/schemas/NotificationStatus' }
+        createdAt: { type: string, format: date-time }
+        scheduledAt: { type: [string, 'null'], format: date-time }
+        sentAt: { type: [string, 'null'], format: date-time }
+        attempts: { type: integer }
+        lastError: { type: [string, 'null'] }
+        deliveries:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationDelivery' }
+    NotificationDelivery:
+      type: object
+      required: [channel, status, attempts]
+      properties:
+        channel: { type: string, enum: [EMAIL, SMS, PUSH] }
+        destinationMasked: { type: string }
+        status: { type: string }
+        providerMessageId: { type: [string, 'null'] }
+        attempts: { type: integer }
+        lastError: { type: [string, 'null'] }
+        sentAt: { type: [string, 'null'], format: date-time }
+    NotificationList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Notification' }
+        total: { type: integer }
+
+    AuditEvent:
+      type: object
+      required: [id, actorType, action, entityType, entityId, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        actorType: { type: string, enum: [ADMIN, CUSTOMER, SYSTEM] }
+        actorId: { type: [string, 'null'], format: uuid }
+        action: { type: string }
+        entityType: { type: string }
+        entityId: { type: string, format: uuid }
+        before: { type: [object, 'null'] }
+        after: { type: [object, 'null'] }
+        requestId: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
