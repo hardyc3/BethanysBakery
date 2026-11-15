@@ -13,13 +13,15 @@ Server
     - Server API for handling user requests, this includes creating an order, verifing that the items aren't already sold out, showing payment status
         - User API can only be accessed by users within the USA
         - User API can only be accessed by the User Client app
+    - use mailgun or textbee for notifications
 
 User Client
-    - Android app
+    - has to be a web app so android and apple users can use it
     - requests should be through https
     - follow secure coding practices
-    - View specific dates and items available for the date
+    - View specific dates and items available for the date with how many are left or sold out
     - create an order for an item or items
+    - allow for customer to select customizations if the item has any
     - show the total that should be sent to Bethany's Venmo
     - show when the order is marked as ready
     - show when the order is marked as paid for
@@ -27,6 +29,7 @@ User Client
     - notify the customer that an order is complete and provide a link to a maps pin
     - notify the customer that an order is delayed
     - allow the customer to set an email address, phone number and name
+    - each item should contain a link to view an ingredient list
     
 
 Admin Client
@@ -35,9 +38,17 @@ Admin Client
     - follow secure coding practices 
     - create a menu for a specific date
         - allow the admin to pick whether or not a notification will be sent, default yes
-        - allow the admin to pick a date for the notification to be sent, default 3 days before first baking day in the week of the menu
-    - add items to the menu with prices and total available quantity and multiple pickup windows for each item.
+        - allow the admin to pick a date for the notification to be sent, default 4 days before first baking day in the week of the menu
+    - add items to the menu with prices and total available quantity and multiple pickup windows at or after a specific time for each item.
+         - allow admin to limit the amount of orders allowed for each pick-up window
+        - each item should have a list of ingredients
     - view total orders for a specific date, with paid/unpaid status
     - send notifications that an order is complete
     - send notifications that an order is delayed
     - send notifications that a menu or date is being cancelled with optional reason entered by the admin 
+    - recieve notification when orders are made
+    - allow admin to mark an order as accepted or rejected
+        - send notification on rejection with reason
+    - allow admin to mark and order as paid for
+    - allow admin to see a list of what needs to be baked on a chosen date
+    - allow admin to provide optional costumizations to items. For exapmle, if I am selling bagels, I want my costumers to be able to choose from a list I create which toppings they would like. 
