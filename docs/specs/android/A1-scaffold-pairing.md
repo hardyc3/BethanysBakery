@@ -65,7 +65,7 @@ app/
   - pairing code
 - QR payload:
   ```json
-  {"v":1,"pairUrl":"https://pair.example.com","apiUrl":"https://admin-api.example.com","code":"..."}
+  {"v":1,"pairUrl":"https://bakery-pair.cherry-home.com","apiUrl":"https://bakery-admin-api.cherry-home.com","code":"..."}
   ```
 - Validate URL scheme/host allowlist:
   - Release requires `https` and an exact host match against the build-time `APP_PAIR_URL` and `APP_ADMIN_API_URL` allowlist.

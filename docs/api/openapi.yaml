@@ -14,9 +14,9 @@ info:
     - Money is integer USD cents.
     - Errors use RFC 9457 Problem Details with a stable `code`.
 servers:
-  - url: https://bakery.example.com
+  - url: https://bakery.cherry-home.com
     description: Customer web and public/customer API
-  - url: https://admin-api.example.com
+  - url: https://bakery-admin-api.cherry-home.com
     description: Admin API (mTLS + device key)
   - url: http://localhost:8080
     description: Local development
@@ -1387,7 +1387,7 @@ components:
       properties:
         challengeId: { type: string, format: uuid }
         channel: { $ref: '#/components/schemas/OtpChannel' }
-        destinationMasked: { type: string, example: b***@example.com }
+        destinationMasked: { type: string, example: b***@cherry-home.com }
         expiresAt: { type: string, format: date-time }
         resendAfterSeconds: { type: integer }
     OtpVerifyRequest:

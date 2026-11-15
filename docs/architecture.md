@@ -58,7 +58,7 @@ Constraints:
                                │ Cloudflare Tunnel (outbound only)
           ┌────────────────────┼─────────────────────┐
           │                    │                     │
-   bakery.example.com   admin-api.example.com   pair.example.com
+   bakery.cherry-home.com   bakery-admin-api.cherry-home.com   bakery-pair.cherry-home.com
           │                    │                     │
           ▼                    ▼                     ▼
    ┌─────────────┐      ┌─────────────────────────────────┐
@@ -177,15 +177,15 @@ docs/
 
 ## 7. Hostnames
 
-Placeholders use `example.com`. Production values live in `/opt/bethanys-bakery/prod/.env`; staging uses `/opt/bethanys-bakery/staging/.env`.
+Placeholders use `cherry-home.com`. Production values live in `/opt/bethanys-bakery/prod/.env`; staging uses `/opt/bethanys-bakery/staging/.env`.
 
 | Hostname | Purpose | Protection |
 |---|---|---|
-| `bakery.example.com` | Customer web + public/customer API | Cloudflare WAF, US-only geo rule |
-| `admin-api.example.com` | Admin API | Cloudflare mTLS client certificate + device API key |
-| `pair.example.com` | One-time device pairing only | No mTLS, pairing code + rate limit |
-| `staging-bakery.example.com` | Staging customer web | Cloudflare Access or basic auth |
-| `staging-admin-api.example.com` | Staging admin API | mTLS |
+| `bakery.cherry-home.com` | Customer web + public/customer API | Cloudflare WAF, US-only geo rule |
+| `bakery-admin-api.cherry-home.com` | Admin API | Cloudflare mTLS client certificate + device API key |
+| `bakery-pair.cherry-home.com` | One-time device pairing only | No mTLS, pairing code + rate limit |
+| `staging-bakery.cherry-home.com` | Staging customer web | Cloudflare Access or basic auth |
+| `staging-bakery-admin-api.cherry-home.com` | Staging admin API | mTLS |
 
 Cloudflare Tunnel routes each hostname to the internal Docker service. No inbound ports on the Proxmox host.
 
@@ -446,7 +446,7 @@ Configuration groups:
 |---|---|---|---|
 | Local | Development | Seeded fake data | localhost |
 | Staging | Pre-release checks | Fake data | staging-* |
-| Production | Real bakery | Real data | bakery.example.com |
+| Production | Real bakery | Real data | bakery.cherry-home.com |
 
 Local uses Docker Compose for API + Postgres. Mailgun/Textbee/FCM are disabled and logged to console. OTP codes appear in API logs only in the `local` profile.
 

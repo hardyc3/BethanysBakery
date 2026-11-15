@@ -35,14 +35,14 @@ If an index duplicates one created earlier, leave it alone. Do not edit prior mi
 
 - Cloudflare Tunnel only. No published host ports for API/Postgres.
 - Tunnel routes:
-  - `bakery.example.com` → `web:80`
-  - `admin-api.example.com` → `api:8080`
-  - `pair.example.com` → `api:8080`
+  - `bakery.cherry-home.com` → `web:80`
+  - `bakery-admin-api.cherry-home.com` → `api:8080`
+  - `bakery-pair.cherry-home.com` → `api:8080`
 - Cloudflare:
   - HSTS enabled.
   - TLS 1.2+.
   - WAF managed rules.
-  - US-only geo rule for `bakery.example.com` on `/api/v1/*`.
+  - US-only geo rule for `bakery.cherry-home.com` on `/api/v1/*`.
   - Admin API mTLS rule with the bakery device CA.
   - Pair hostname has no mTLS but strict rate limiting.
   - Media cache for `/api/v1/media/*`, bypass cache for availability/orders.
@@ -102,7 +102,7 @@ If an index duplicates one created earlier, leave it alone. Do not edit prior mi
 - Setup generates a private CA if absent:
   - `/opt/bethanys-bakery/secrets/device-ca.key`
   - `/opt/bethanys-bakery/secrets/device-ca.crt`
-- Operator uploads the CA certificate to Cloudflare mTLS for `admin-api`.
+- Operator uploads the CA certificate to Cloudflare mTLS for `bakery-admin-api`.
 - Origin requires `Cf-Authenticated-Client-Cert-Verified: true` in addition to the certificate header. Reject requests where Cloudflare marks the certificate unverified or revoked.
 - Device certificates: 180 days.
 - Pairing issues certificates. Revocation:
