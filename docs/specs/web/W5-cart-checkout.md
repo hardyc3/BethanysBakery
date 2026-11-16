@@ -3,149 +3,125 @@
 - Status: ready
 - Depends on: W4, S5
 - Contract: `docs/api/openapi.yaml` → `createOrder`, public menu read
+- Design: `design examples/design_exmaples.json` → **Customer · Checkout**
 - Next: W6
 
 ## Goal
 
-Review the cart, confirm the pickup window, handle availability changes, and submit an order with a clear success or failure path.
+Review basket, choose/confirm pickup time, collect required customer details, explain Venmo/manual payment, and submit an order with clear success/failure handling.
 
 ## Non-goals
 
-- Payment confirmation (W6).
+- Collecting in-app payment (Venmo handled outside app).
+- Payment confirmation/status timeline (W6).
 - Order history (W7).
-- Saved payment methods.
 
 ## Routes
 
-- `/cart`
-- Checkout is a single review page; no multi-step wizard.
+- `/cart` (basket/checkout view).
+- Single-page checkout flow (review → details → place order) consistent with design.
 
 ## Screen
 
-1. Cart lines:
-   - photo, name, selected options, notes
-   - unit price, quantity stepper, line total
-   - remove line
-   - availability warning if the offering changed
-2. Pickup window:
-   - selected date/window summary
-   - change window link back to menu with date context
-   - capacity/cutoff status
-3. Contact:
-   - name, email, phone from profile
-   - link to `/account` if missing/unverified
-4. Order notes (max 500).
-5. Totals:
-   - subtotal
-   - total (no tax/fees)
-   - server-confirmed total after submit
-6. Submit button:
-   - disabled when empty, profile incomplete, cutoff passed, or submitting.
-   - shows "Place order".
-7. Policy notes:
-   - Venmo payment instructions follow on the next screen.
-   - cancellation window.
-   - pickup address/maps link.
+### Top bar/context
+
+- Brand header (logo/name) and "Your basket" with back action ("← Back").
+
+### Basket summary
+
+- Heading: "Save your slice." (brand tone).
+- Context: "<Day, Month Date> · <n> items" for selected bake day.
+- Basket items card/list:
+  - lines like "1 × Country sourdough" with line amount, "2 × Cinnamon rolls" with amount.
+  - divider and **Total** (e.g. `$22`).
+  - allow edit quantity/remove (and/or return to menu) per cart rules.
+
+### Pickup selection
+
+- "Choose a pickup time" for selected bake day/location context (e.g. "Friday, Nov 20 · Bethany’s home bakery").
+- Pickup time options as selectable chips/slots (e.g. `4:00 pm`, `4:30 pm`, `5:00 pm`) mapped to available pickup windows/slots from server.
+  - disabled states for full/closed/cutoff slots as applicable.
+  - if design shows time slots finer than server windows, map slots to the correct `pickupWindowId` and document/align in API; do not invent server-unsupported slots.
+- Helper text: "Pickup address is shared after ordering." (exact pickup address shown post-order per W6 unless policy changes).
+
+### Customer details
+
+- "Your details".
+- Fields shown in design: **Full name** (e.g. "Jamie Parker"), **Mobile number** (e.g. "(555) 014-0826").
+  - prefill from authenticated profile when available.
+  - allow entry/confirmation as needed for ordering/contact; persist to profile per W2 contract/rules where appropriate.
+  - validate required fields before submit (name and reachable contact per domain rules).
+
+### Payment explanation
+
+- Card/callout: "A small-batch way to pay".
+- Copy: "Place your order, then send $22 to\n@Bethany-Bakes on Venmo." (amount/handle dynamic from order/server config where available).
+- "Bethany confirms your payment manually."
+- No in-app payment collection.
+
+### Agreement and submit
+
+- Agreement text: "By ordering, you agree to pick up during your selected time. Please tell Bethany about any allergies."
+- Sticky bottom CTA: "Place order  ·  $22" (disabled when invalid/submitting/closed).
+- Footer note: "No payment is collected in this app."
 
 ## Checkout flow
 
-1. Validate cart shape locally.
-2. Fetch the latest menu date/offering availability.
-3. Compare:
-   - offering still active and assigned to the selected window
-   - available quantity >= cart quantity
-   - window capacity > 0
-   - cutoff not passed
-4. If changed:
-   - show a blocking dialog listing affected lines.
-   - options: update quantities, remove sold-out lines, or return to menu.
-   - never silently reduce an order.
-5. Submit `POST /api/v1/orders` exactly once:
-   - generate a client `idempotency_key` (UUID) when checkout begins; reuse the same key for retries of the same submission.
-   - disable button and use an in-memory guard.
-   - do not auto-retry mutations. If user taps retry after unknown/network failure, send the same `idempotency_key` so the server returns the existing order instead of creating duplicates.
+1. Validate cart shape and required details locally.
+2. Fetch latest availability for selected date/window/offerings.
+3. Compare: active/assigned offerings, available quantity, window/slot capacity, cutoff not passed.
+4. If changed, show blocking dialog listing affected lines; options to update quantities, remove sold-out lines, or return to menu. Never silently reduce.
+5. Submit `POST /api/v1/orders` once with generated `idempotency_key` (UUID) reused on retry of same submission; disable CTA and guard.
 6. Handle responses:
-   - `201`: clear cart, navigate to `/orders/:id/confirmation`.
-   - `409 SOLD_OUT`: mark affected line(s), explain, keep cart.
-   - `409 WINDOW_FULL`: force window reselection.
-   - `409 CUTOFF_PASSED`: disable submit, link to menu.
-   - `409 CUSTOMER_LIMIT_EXCEEDED`: show limit details and allow quantity edit.
-   - `400 INVALID_CUSTOMIZATION`: remove invalid options and explain.
-   - `401`: refresh once, then redirect to login with return-to.
+   - `201`: clear cart, navigate to order confirmation/received screen (W6).
+   - `409 SOLD_OUT` / `409 WINDOW_FULL` / `409 CUTOFF_PASSED` / `409 CUSTOMER_LIMIT_EXCEEDED` / `400 INVALID_CUSTOMIZATION`: show actionable errors, keep cart, allow fix.
+   - `401`: refresh once then login with return-to.
    - `429`: show retry wait.
-   - network/5xx: keep cart, show retry, never assume success.
-7. After a successful order, refetch menu availability when returning to the menu.
+   - network/5xx: keep cart, retry with same idempotency key when appropriate; never assume success.
+7. On return to menu, refetch availability.
 
-## Profile guard
+## Profile/auth guard
 
-- Name required.
-- At least one verified contact.
-- If not satisfied, show an inline callout and link to `/account`.
-- Preserve cart through login/profile edits.
-
-## Cart editing
-
-- Quantity changes revalidate against last-known availability.
-- Removing last line shows empty cart state.
-- Empty cart links back to menu.
-- Cart remains scoped to one date/window.
-
-## API integration
-
-- `createOrder`
-- `getPublicMenuDate`
-- `getPublicOffering`
-- `getCustomerProfile`
+- User must be able to place order per auth/profile requirements (W2). If login or missing required/verified contact blocks order, prompt inline with clear path (sign in / complete details) while preserving cart.
+- Do not lose cart through auth/profile steps.
 
 ## Ordered tasks
 
-1. Build cart page and line components.
-2. Add quantity/remove/edit behavior.
-3. Build review summary, window/contact sections, notes, totals.
-4. Implement pre-submit availability revalidation.
-5. Implement changed-cart dialog and recovery actions.
-6. Implement submit with duplicate-click protection.
-7. Map all Problem codes to actionable UI.
-8. Clear cart on success and navigate to confirmation.
-9. Add tests with MSW for every error code.
-10. Add Playwright checkout happy path and sold-out race.
+1. Build basket/cart review UI and edit controls.
+2. Implement pickup day/time slot selection mapped to server windows.
+3. Implement customer details form with prefill/validation.
+4. Implement Venmo/payment explanation and agreement copy.
+5. Add pre-submit availability revalidation and change dialogs.
+6. Implement order submit with idempotency and response handling.
+7. Add loading/disabled/error states and retry behavior.
+8. Add tests (MSW), cart/slot mapping tests, and Playwright checkout smoke.
 
 ## Acceptance criteria
 
-- Given an empty cart, then an empty state links to the menu.
-- Given a missing name, then checkout is blocked with a profile link.
-- Given no verified contact, then checkout is blocked with a profile link.
-- Given availability dropped below cart quantity, then a blocking dialog appears and no order is submitted.
-- Given a valid cart, when submitted, then exactly one order is created and the cart is cleared.
-- Given a double click, then only one order is created.
-- Given a retry after network/timeout failure, then the same `idempotency_key` is sent and the server returns the existing order if it was created.
-- Given `SOLD_OUT`, then the affected line is identified and the cart remains.
-- Given `WINDOW_FULL`, then the customer is prompted to choose another window.
-- Given `CUTOFF_PASSED`, then submit is disabled and ordering is closed.
-- Given `CUSTOMER_LIMIT_EXCEEDED`, then the limit is explained.
-- Given a network failure, then the cart remains and a retry is offered.
-- Given a 401 with a valid refresh, then the order is retried once after refresh with the same `idempotency_key`.
-- Given success, then the confirmation page shows the order number and total from the server.
+- Given cart items, basket shows item lines, per-line amounts, and total.
+- Given bake day, user can choose a pickup time slot; full/closed/cutoff slots not selectable.
+- Given missing/invalid required details, Place order disabled with guidance.
+- Given valid basket/details/slot, submit creates order once and navigates to confirmation.
+- Given availability/capacity/cutoff changes, blocking explanation shown and no silent reduction.
+- Given submit failure after unknown state, retry uses same idempotency key.
+- Given "No payment is collected in this app" and Venmo copy, user understands manual payment step.
+- Given 360px width, layout readable and CTA accessible.
 
 ## Test plan
 
-- Component tests for cart editing and totals.
-- Availability revalidation and dialog behavior.
-- Each Problem code mapping.
-- Double-submit guard.
-- 401 refresh-and-retry once.
-- Playwright: menu → item → cart → checkout → confirmation.
-- Playwright: simulate sold-out between browse and submit.
-- Accessibility: form labels, dialog focus trap, error announcements.
+- Unit: totals, slot-to-window mapping, idempotency key reuse, validation.
+- Component: basket edits, slot states, details prefill/validation, error dialogs.
+- MSW: 201 and all 4xx/409/429/5xx cases.
+- Playwright: menu → basket → pickup time → details → place order.
+- Accessibility: form labels, chip selection, dialog focus, error announcements.
 
 ## Security checklist
 
-- [ ] Totals/prices are never trusted from the client.
-- [ ] No card/payment data collected.
-- [ ] CSRF header sent.
-- [ ] No order submission on page load.
-- [ ] Notes escaped.
-- [ ] Login return path is local-only.
+- [ ] CSRF/auth handled per API.
+- [ ] Idempotency key scoped to submission attempt/retry.
+- [ ] No PII in URLs; details handled per privacy rules.
+- [ ] Client totals display-only; server authoritative.
+- [ ] No in-app payment data collected.
 
 ## Quality gate
 
@@ -162,10 +138,10 @@ Quality-gate results belong in the phase PR description.
 
 ## Definition of done
 
-Checkout handles real inventory races gracefully, creates exactly one order, and W6 receives a stable order ID. Tests cover all documented error codes.
+Checkout matches design: basket review, pickup time choice, customer details, Venmo/manual-payment explanation, agreement, and reliable order submission with safe error handling.
 
 ## Handoff notes
 
-- W6 owns the confirmation/status screen and Venmo instructions.
-- Server commits inventory; the client must treat `201` as final.
-- If the server later adds an idempotency key, send it from this phase's submit path.
+- Post-order confirmation, Venmo deep link/copy details, pickup address reveal, and status live in W6.
+- Slot granularity must align with server pickup-window model; update OpenAPI/domain if finer-grained slots are required.
+- Keep design copy tone consistent ("Save your slice", small-batch/manual payment).

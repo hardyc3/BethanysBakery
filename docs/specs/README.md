@@ -201,17 +201,17 @@ Local profile behavior:
 | S7 | `server/S7-hardening-deploy.md` | Security hardening, deploy, backups, runbooks, e2e/load tests |
 | W1 | `web/W1-scaffold.md` | React/Vite scaffold, design system, API client |
 | W2 | `web/W2-auth-profile.md` | OTP login, session, profile, contact verification |
-| W3 | `web/W3-menu-browse.md` | Dates, menu, availability, sold out |
-| W4 | `web/W4-item-detail.md` | Item detail, ingredients, allergens, customizations |
-| W5 | `web/W5-cart-checkout.md` | Cart, window selection, validation, order submit |
-| W6 | `web/W6-confirmation-status.md` | Confirmation, Venmo instructions, status polling |
-| W7 | `web/W7-history-cancel-prefs.md` | Order history, cancel, notification preferences |
+| W3 | `web/W3-menu-browse.md` | Weekly menu browse: dates/pickup, cutoff, availability, inline basket |
+| W4 | `web/W4-item-detail.md` | Item detail, ingredients, allergens, customizations, cart lines |
+| W5 | `web/W5-cart-checkout.md` | Basket/checkout, pickup time, details, Venmo explanation, submit |
+| W6 | `web/W6-confirmation-status.md` | Order received, payment/pickup details, status, updates |
+| W7 | `web/W7-history-cancel-prefs.md` | My orders, cancel, notification preferences/consent |
 | W8 | `web/W8-pwa-hardening.md` | PWA, a11y, e2e, security |
 | A1 | `android/A1-scaffold-pairing.md` | Compose scaffold, network, QR pairing bootstrap |
 | A2 | `android/A2-login-device.md` | Login, TOTP, device management |
-| A3 | `android/A3-menus-dates.md` | Menu/date create/edit/publish/cancel |
+| A3 | `android/A3-menus-dates.md` | Overview/menu list and weekly menu editor, publish/cancel |
 | A4 | `android/A4-item-templates.md` | Templates, photos, ingredients, allergens, customizations |
-| A5 | `android/A5-offerings-windows.md` | Offerings, price, quantity, pickup windows |
-| A6 | `android/A6-orders-bake-list.md` | Orders, accept/reject, paid, bake list |
+| A5 | `android/A5-offerings-windows.md` | Offerings, bake limits/availability, pickup & cutoff/slots |
+| A6 | `android/A6-orders-bake-list.md` | Overview snapshot, pickup orders, payment/ready actions, bake list |
 | A7 | `android/A7-notifications.md` | Publish, reminder, delay, cancel, rejection |
 | A8 | `android/A8-push-release.md` | FCM, update check, signing, release |

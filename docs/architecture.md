@@ -361,9 +361,10 @@ Configuration groups:
 1. Admin accepts a `PENDING` order before cutoff.
 2. Status becomes `ACCEPTED`. Customer is notified with Venmo instructions.
 3. Admin marks `PAID` when Venmo payment arrives.
-4. If the order is accepted but never marked paid, payment is handled in cash at pickup. This is not shown as an option to customers.
-5. Admin marks `READY` on baking day. Customer gets a ready notification with a maps link.
-6. Admin marks `COMPLETED` after pickup.
+4. When an order transitions to `PAID`, server sends an admin email (`ADMIN_ALERT_EMAIL`) with full bake/fulfillment order details (order number, bake date, pickup window, customer snapshots, items/options/notes, totals, payment method, paid time) as a durable digital paper trail in case of database failure.
+5. If the order is accepted but never marked paid, payment is handled in cash at pickup. This is not shown as an option to customers.
+6. Admin marks `READY` on baking day. Customer gets a ready notification with a maps link.
+7. Admin marks `COMPLETED` after pickup.
 
 ### Expiry
 

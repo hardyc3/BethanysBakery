@@ -1,124 +1,129 @@
-# W6 — Order Confirmation, Venmo Instructions, and Status
+# W6 — Order Confirmation, Payment, and Status/Updates
 
 - Status: ready
 - Depends on: W5, S5, S6
-- Contract: `docs/api/openapi.yaml` → `getCustomerOrder`, order status
+- Contract: `docs/api/openapi.yaml` → `getCustomerOrder`, `PaymentInstructions`, notification preferences (as applicable)
+- Design: `design examples/design_exmaples.json` → **Customer · Order & updates**
 - Next: W7
 
 ## Goal
 
-Show a clear order confirmation, Venmo payment instructions, and the live order status through acceptance, ready, delay, cancellation, and payment changes.
+Show order received/confirmation with pickup details, clear Venmo payment steps, live status, and friendly post-order updates/preferences.
 
 ## Non-goals
 
-- Order history list (W7).
-- Cancelling from history (W7; the detail page may include the same action).
-- Automated payment verification.
+- Full order history list filtering UX beyond needed links (W7).
+- Refund processing.
 
 ## Routes
 
-- `/orders/:orderId/confirmation` — post-checkout success.
-- `/orders/:orderId` — status detail (same component, different heading).
-- Both require auth and ownership.
+- `/orders/:orderId/confirmation` — post-checkout "Order received".
+- `/orders/:orderId` — status/detail (shared component/structure where practical).
+- Authenticated and ownership-enforced.
 
-## Confirmation content
+## Screen
 
-- Success heading and order number.
-- Pickup date, window, and address/maps link.
-- Item lines with options, quantities, line totals.
-- Order total.
-- Payment block, sourced only from `PaymentInstructions`:
-  - `venmoHandle` and `venmoDisplayName`.
-  - `amountCents` rendered with `Intl.NumberFormat` in USD.
-  - `note` / reference: order number.
-  - Copy buttons for handle/amount/note.
-  - Venmo deep link when available; fallback to venmo.com profile URL.
-  - Instructions: "Send payment, then Bethany will mark it paid." Do not mention cash at pickup; it is an admin-only fallback for known customers.
-  - Payment status badge: UNPAID/PAID.
-- Status timeline:
-  - Placed → Accepted → Ready → Completed, plus terminal branches.
-  - Show timestamps when present.
-  - Show rejection/cancellation reason.
-  - Show delay notice/reason when set.
-- Ready state:
-  - prominent "Ready for pickup" with maps link.
-  - pickup window reminder.
-- Rejected/cancelled:
-  - clear reason and support contact.
-  - no Venmo prompt for terminal unpaid rejected/cancelled orders.
-- Notification expectations:
-  - email/SMS toggles live in W7 preferences.
-  - show "We'll email/text you when it's ready" based on profile/preferences if available.
+### Order received header
+
+- Brand header with back/navigation context.
+- "Order received" context, order badge "ORDER #<number>" (e.g. `#B1042`).
+- Celebratory heading (e.g. "Your Friday just\ngot sweeter.") and thank-you line with customer name and item count (e.g. "Thanks, Jamie. Your 3 bakes are reserved!").
+
+### Payment pending / payment block
+
+- When unpaid: "Payment pending" badge/card.
+- "One last thing: send $22" (server total).
+- "Pay @Bethany-Bakes on Venmo.\nAdd “<order #> · <name>” in the note." (handle/display name/amount/note from `PaymentInstructions` where available).
+- Primary action: "Open Venmo  ↗" (deep link if available, fallback URL) plus copy affordances as needed.
+- "Your order will show as paid once Bethany confirms." (manual confirmation).
+- When paid: payment-complete state/badge; hide pay prompt.
+
+### Pickup summary
+
+- "Your pickup" card: date/time (e.g. "Friday, November 20 · 4:00 pm"), location/address (e.g. "Bethany’s home bakery\n124 Maple Lane · Front porch pickup") as provided/allowed, divider, item summary (e.g. "1 sourdough loaf  ·  2 cinnamon rolls").
+- Maps link when appropriate.
+
+### Status
+
+- Status timeline/badges for Placed/Accepted/Ready/Completed and terminal states (Rejected/Cancelled/Expired) with timestamps/reasons/delay notices as available.
+- Prominent ready state and pickup reminders; stop polling on terminal states.
+- Design emphasizes received/payment/pickup; detailed timeline may live in detail view but must remain clear and accessible.
+
+### Friendly updates/preferences (per design)
+
+- Section: "Fresh bakes. Friendly reminders."
+- Context: "Send text updates to <phone>" when applicable.
+- Toggles shown: **Order ready** ("Know when it’s time to pick up."), **New weekly menus** ("Get first pick of the next batch."), **Before a baking day** ("A reminder to order the day before.").
+  - Reflect and update real notification preferences/consent where supported (see W7/S6); if a setting is unavailable, show accurate state/copy (do not fake persistence).
+  - SMS requires verified number and consent per policy.
+
+### Footer/actions
+
+- "Back to this week’s menu" primary secondary action.
+- "Questions? Text Bethany" support/help affordance.
 
 ## Polling
 
-- TanStack Query key `['order', orderId]`.
-- `refetchInterval`:
-  - 30 seconds for `PENDING`/`ACCEPTED`.
-  - 60 seconds for `READY`.
-  - stop for `COMPLETED`, `REJECTED`, `CANCELLED`, `EXPIRED`.
-- Refetch on focus.
-- Keep previous data to avoid flicker.
-- If 404/403, show not-found/unauthorized state.
+- Query key `['order', orderId]`; refetch on focus.
+- Intervals: ~30s for `PENDING`/`ACCEPTED`, ~60s for `READY`, stop for terminal states.
+- Keep previous data; handle 403/404 clearly.
 
 ## Status mapping
 
 | Status | UI |
 |---|---|
-| PENDING | "Waiting for Bethany to accept" |
-| ACCEPTED | "Accepted — please send Venmo payment" |
-| READY | "Ready for pickup" + maps |
-| COMPLETED | "Picked up — thank you" |
-| REJECTED | "Not accepted" + reason |
-| CANCELLED | "Cancelled" + reason |
-| EXPIRED | "Expired — not accepted before cutoff" |
+| PENDING | waiting/placed (and payment pending as applicable) |
+| ACCEPTED | accepted; payment instructions if unpaid |
+| READY | ready for pickup + location/maps/time |
+| COMPLETED | picked up/completed |
+| REJECTED | not accepted + reason |
+| CANCELLED | cancelled + reason |
+| EXPIRED | expired/cutoff explanation |
 
-Payment status is independent; show both.
+Payment status shown independently (UNPAID/PAID).
+
+## API integration
+
+- `getCustomerOrder`, server-provided `PaymentInstructions`.
+- Notification preference endpoints as needed for toggles (coordinate with W7).
+- External links: Venmo/maps with safe `noopener noreferrer`.
 
 ## Ordered tasks
 
-1. Build order query and ownership handling.
-2. Build confirmation header and summary.
-3. Build Venmo payment card with copy/deep link.
-4. Build status timeline and terminal states.
-5. Add polling policy and focus refetch.
-6. Add maps link and pickup details.
-7. Add delay/rejection/cancellation reasons.
-8. Add tests with MSW for each status.
-9. Add Playwright confirmation/status smoke.
+1. Build confirmation/received layout (badge, hero, thank-you).
+2. Build payment pending/paid card with Venmo deep link/copy and manual-confirm copy.
+3. Build pickup summary (time, address reveal, items).
+4. Build status/timeline and terminal states with polling.
+5. Build updates/preferences toggles wired to real prefs/consent states.
+6. Add footer actions and support contact.
+7. Add tests (MSW) per status/payment and Playwright smoke.
 
 ## Acceptance criteria
 
-- Given a new order, then the confirmation shows the order number, server total, and `venmoHandle`, `venmoDisplayName`, amount, and note.
-- Given a copy button, then the value is copied and an accessible confirmation is announced.
-- Given `PENDING`, then the status explains acceptance is pending and polling continues.
-- Given `ACCEPTED`, then Venmo instructions are prominent and payment status shows UNPAID.
-- Given `READY`, then a maps link and ready message appear.
-- Given `COMPLETED`, then polling stops and the terminal state renders.
-- Given `REJECTED`, then the reason and support contact appear and Venmo is not requested.
-- Given `EXPIRED`, then the cutoff explanation appears.
-- Given `PAID`, then the payment badge updates.
-- Given a delayed order, then the delay notice/reason appears.
-- Given another customer's order ID, then access is denied.
+- Given new order, confirmation shows order number, thank-you, items/total context, and pickup time/date.
+- Given unpaid, shows "Payment pending", amount, Venmo handle/note instructions, "Open Venmo", and manual confirmation note.
+- Given paid, payment-pending prompt replaced by paid state.
+- Given pickup details, address/location and item summary shown as in design.
+- Given status changes, UI updates via polling and stops on terminal.
+- Given toggles, shown states match server preferences/consent; changes persist when supported with correct SMS consent/verification rules.
+- Given back-to-menu/questions actions, navigation/help works.
+- Given ownership violation, access denied.
 
 ## Test plan
 
-- Component tests for each status/payment combination.
-- Polling start/stop with fake timers.
-- Copy/deep link behavior.
-- Ownership/403 state.
-- Maps URL correctness.
-- Playwright: checkout → confirmation → status update via API fixture.
-- Accessibility: timeline semantics, live region for status changes.
+- Component tests for received/payment/pickup/status combinations and toggle states.
+- Polling start/stop, copy/deep-link behavior.
+- MSW for order + preference APIs.
+- Playwright: checkout → received → status/payment update.
+- Accessibility: headings, badges, live updates, toggle labels, link names.
 
 ## Security checklist
 
-- [ ] Only the owner can view the order.
-- [ ] Venmo link uses `venmoHandle`/`venmoDisplayName` from the server, not user input.
+- [ ] Owner-only access.
+- [ ] Venmo handle/note/amount from server, not user input.
 - [ ] No payment credentials collected.
-- [ ] Copy actions do not leak other data.
-- [ ] External links use `noopener noreferrer`.
-- [ ] Polling stops on terminal states.
+- [ ] External links safe; no PII in URLs.
+- [ ] Preference/consent changes explicit and server-validated.
 
 ## Quality gate
 
@@ -135,10 +140,10 @@ Quality-gate results belong in the phase PR description.
 
 ## Definition of done
 
-The post-order experience is clear, payment instructions are unambiguous, status changes are visible without reload, and terminal states are handled.
+Post-order experience matches design: warm received state, clear manual Venmo/payment flow, pickup details, live status, and accurate updates/preferences controls.
 
 ## Handoff notes
 
-- W7 uses the same order detail component for history.
-- If notification preferences are unavailable, use generic "we'll notify you" copy.
-- The server remains the source of truth for payment/status.
+- W7 owns full history and deeper preference management/cancellation flows; share components where possible.
+- Confirm exact notification event mapping for "Order ready / New weekly menus / Before a baking day" against `NotificationEventType` and preference model.
+- Pickup address visibility rules must follow server/domain policy.

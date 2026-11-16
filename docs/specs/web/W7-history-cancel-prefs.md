@@ -3,97 +3,56 @@
 - Status: ready
 - Depends on: W6, S5, S6
 - Contract: `docs/api/openapi.yaml` → `listCustomerOrders`, `cancelCustomerOrder`, notification preferences
+- Design: `design examples/design_exmaples.json` → **Customer · Order & updates** (updates/preferences entry points) and **My orders** nav
 - Next: W8
 
 ## Goal
 
-Let customers review past orders, cancel eligible orders, and manage email/SMS notification preferences and consent.
+Let customers review orders ("My orders"), cancel eligible orders, and manage notification preferences/consent with clear, accurate states.
 
 ## Non-goals
 
-- Refunds (manual, contact Bethany).
+- Automated refunds (manual, contact Bethany).
 - Account deletion automation.
-- Marketing subscriptions beyond the documented event types.
 
 ## Routes
 
-- `/orders` — order history.
-- `/orders/:orderId` — existing status detail (W6).
-- `/account` — profile, cancellation policy, preferences.
-- `/account/notifications` — preference editor (can also live in `/account`).
+- `/orders` — "My orders" history.
+- `/orders/:orderId` — status/detail (W6).
+- `/account` and/or `/account/notifications` (and/or **Updates** tab) — preferences/consent and profile links; align with W6/W3 nav.
 
-## Order history
+## My orders / order history
 
-- Requires auth.
-- Paginated list (20/page), newest first.
-- Each row:
-  - order number
-  - bake date and pickup window
-  - item summary (e.g. "2 items")
-  - total
-  - status badge
-  - payment badge
-  - created date
-  - link to status detail
-- Filters:
-  - All / Active / Completed / Cancelled, mapped to the server enum `ALL`, `ACTIVE`, `COMPLETED`, `CANCELLED`.
-  - The selected filter is sent as the `filter` query parameter to `listCustomerOrders`; do not filter a full client-side page.
-  - `ACTIVE` covers `PENDING`, `ACCEPTED`, `READY`.
-  - `COMPLETED` covers only `COMPLETED`.
-  - `CANCELLED` covers `REJECTED`, `CANCELLED`, `EXPIRED`.
-  - Changing the filter resets pagination to page 1 and is reflected in the URL (`?filter=active`).
-- Empty state with menu link.
-- Pull-to-refresh style button; refetch on focus.
-- Pagination controls with preserved state.
+- Requires auth; paginated (20/page), newest first.
+- Row/card: order number, bake date/pickup time, item summary, total, status and payment badges, link to detail.
+- Filters mapped to server `filter` (`ALL` default, `ACTIVE`, `COMPLETED`, `CANCELLED`); sent as query param (no full client-side filter). Reset to page 1 on change; reflect in URL.
+  - `ACTIVE`: `PENDING`, `ACCEPTED`, `READY`
+  - `COMPLETED`: `COMPLETED`
+  - `CANCELLED`: `REJECTED`, `CANCELLED`, `EXPIRED`
+- Empty state links to Menu.
+- Refetch on focus; pull-to-refresh/manual refresh.
 
 ## Cancellation
 
-- Cancellation available on the order detail page and history row when eligible:
-  - status `PENDING` or `ACCEPTED`
-  - before 00:00 America/Denver on bake date
-- Show policy:
-  - cancel until baking day starts
-  - paid orders require a manual refund from Bethany
-  - no cancellation after baking starts
-- Confirm dialog:
-  - warning that the order cannot be restored and stock may be released
-  - optional reason field (max 500)
-- On success:
-  - refresh order/history
-  - show cancelled state and reason
-  - instruct paid customers to contact support for refund
-- On 409:
-  - refresh order and show the current state with an explanation.
-- Do not optimistically show cancelled before the server confirms.
+- Available for eligible orders (detail/history) per policy: `PENDING` or `ACCEPTED` before `00:00 America/Denver` on bake date (server authoritative).
+- Confirm dialog with policy: cancel cutoff, no restore, inventory may release, paid orders require manual refund from Bethany; optional reason (max 500).
+- On success refresh and show cancelled state/reason; on 409 refresh and explain current state. No optimistic cancel.
 
-## Notification preferences
+## Notification preferences (align with design)
 
-- Fetch `getNotificationPreferences`.
-- For each event type:
-  - label and short description
-  - email toggle
-  - SMS toggle
-  - SMS disabled until consent is given
-- SMS consent:
-  - explicit checkbox with TCPA-style copy:
-    - "I agree to receive transactional text messages from Bethany's Bakery about my orders and menus. Message frequency varies. Message and data rates may apply. Reply STOP to opt out, START to resume."
-  - link to privacy policy.
-  - record consent via `PUT` with `smsConsent=true`.
-- `PUT` full preferences atomically; show save state and errors.
-- Warning when no verified email/phone.
-- STOP handling is server-side; UI shows `smsOptedOut` and lets the customer re-consent.
-- Defaults from the server; do not invent local defaults.
-
-## Profile linkage
-
-- Link to contact verification (W2).
-- Show verified/unverified badges.
-- If email is unverified, email notifications may not deliver; explain.
-- If phone is unverified, SMS toggle disabled.
+- Design shows friendly toggles: **Order ready**, **New weekly menus**, **Before a baking day** with short descriptions and phone context (e.g. "Send text updates to <phone>").
+- Map to real server `NotificationEventType`s/preferences; present accurate labels/descriptions and channels (email/SMS) per capability.
+  - Do not invent event types; if UI groups/types differ, map clearly and document (update contract/spec only when intentionally changed).
+- SMS consent/verification:
+  - explicit consent required; show TCPA-style copy and privacy policy link.
+  - SMS toggles disabled until consent and verified phone where required.
+  - reflect `smsOptedOut`/STOP state and allow explicit re-consent flow.
+- `PUT` preferences atomically; show save state/errors and revert to server state on failure.
+- Warn when email/phone unverified.
 
 ## API integration
 
-- `listCustomerOrders` with `filter` (`ALL` default), `page`, `size`.
+- `listCustomerOrders` (`filter`, `page`, `size`)
 - `getCustomerOrder`
 - `cancelCustomerOrder`
 - `getNotificationPreferences`
@@ -102,53 +61,37 @@ Let customers review past orders, cancel eligible orders, and manage email/SMS n
 
 ## Ordered tasks
 
-1. Add order history query and pagination wired to the server `filter` parameter.
-2. Build history rows, filters, and empty/error states.
-3. Add cancellation action and confirm dialog.
-4. Handle cancel success/409/401.
-5. Add refund/support copy for paid cancellations.
-6. Build notification preference editor.
-7. Add SMS consent flow and validation.
-8. Add verified-contact warnings.
-9. Add tests with MSW.
-10. Add Playwright history/cancel/preferences smoke.
+1. Build "My orders" list, filters, pagination, empty/error states.
+2. Add navigation between Menu/My orders/Updates and order detail.
+3. Implement cancellation eligibility, dialog, and 409/success handling.
+4. Implement preference UI matching design labels mapped to server events/channels.
+5. Implement SMS consent, verification warnings, opt-out/re-consent states.
+6. Persist preferences with save/revert behavior.
+7. Add tests (MSW) and Playwright smoke.
 
 ## Acceptance criteria
 
-- Given past orders, then history is newest first with status/payment badges.
-- Given each filter, then the request sends the matching `filter` value and only matching statuses are shown: `ACTIVE` = PENDING/ACCEPTED/READY, `COMPLETED` = COMPLETED, `CANCELLED` = REJECTED/CANCELLED/EXPIRED.
-- Given no orders, then an empty state links to the menu.
-- Given a PENDING order before bake day, then cancel is available.
-- Given an ACCEPTED order before bake day, then cancel is available and paid orders show refund instructions.
-- Given a READY/COMPLETED/terminal order, then cancel is not available.
-- Given bake day has started, then cancel is disabled with an explanation.
-- Given a successful cancel, then the order shows CANCELLED and the reason.
-- Given a 409 cancel, then the latest state is shown.
-- Given SMS consent is unchecked, then SMS toggles are disabled.
-- Given `smsOptedOut`, then the UI explains that texts are stopped and offers explicit re-consent.
-- Given consent is checked and preferences saved, then the server state is reflected.
-- Given a preference save error, then the UI restores the last server state and explains.
-- Given unverified email/phone, then a warning is shown.
+- Given orders, "My orders" shows newest first with correct badges and filters/page behavior.
+- Given empty history, CTA to Menu shown.
+- Given eligible order, cancel flow works with confirmation and correct server-result states; ineligible orders cannot cancel.
+- Given design toggle labels, each maps to correct preference state and persists (or shows accurate read-only/unavailable state).
+- Given no consent/unverified phone or opted-out SMS, SMS controls behave correctly with clear explanations.
+- Given save error, UI reverts and explains.
+- Given 360px/mobile, controls accessible.
 
 ## Test plan
 
-- History pagination/filtering and empty/error states.
-- Cancellation eligibility matrix (status × time).
-- Cancel success, 409, 401.
-- Preference defaults and save/revert.
-- SMS consent gating.
-- Playwright: history → detail → cancel; preferences save.
-- Accessibility: toggle labels, consent copy, dialog focus.
+- History pagination/filter mapping and states.
+- Cancellation eligibility matrix and 409 handling.
+- Preference load/save/revert, consent gating, opt-out display.
+- Playwright: My orders → detail/cancel; Updates/preferences save.
+- Accessibility: list semantics, dialogs, toggles, consent copy.
 
 ## Security checklist
 
-- [ ] Only own orders are listed.
-- [ ] Cancellation is confirmed, not optimistic.
-- [ ] Consent is explicit and recorded server-side.
-- [ ] No marketing opt-in bundled with transactional consent.
-- [ ] Privacy policy link present.
-- [ ] No PII in URLs.
-- [ ] CSRF header sent.
+- [ ] Own orders only; confirmed (not optimistic) cancel.
+- [ ] Explicit SMS consent recorded server-side; privacy policy linked.
+- [ ] No PII in URLs; CSRF/auth per API.
 
 ## Quality gate
 
@@ -165,10 +108,10 @@ Quality-gate results belong in the phase PR description.
 
 ## Definition of done
 
-Customers can review orders, cancel when allowed, and control notification channels with valid consent. W8 can run full e2e flows.
+"My orders" and Updates/preferences reflect the design and support safe cancellation and accurate, consent-aware notification settings.
 
 ## Handoff notes
 
-- Refunds are manual; do not imply automatic refunds.
-- SMS STOP keywords are handled by S6; UI reflects server state.
-- Keep preference labels aligned with `NotificationEventType` enum.
+- Coordinate toggle-to-event mapping with S6/W6 so labels match domain events.
+- Refunds remain manual.
+- Keep preference labels aligned with enums once mapping is finalized.

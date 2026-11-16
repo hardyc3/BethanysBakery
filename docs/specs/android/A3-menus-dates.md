@@ -1,135 +1,113 @@
-# A3 — Menu and Bake Date Management
+# A3 — Menus, Bake Dates, and Weekly Menu Editor
 
 - Status: ready
 - Depends on: A2, S4
 - Contract: `docs/api/openapi.yaml` → Admin Menus
+- Design: `design examples/design_exmaples.json` → **Bethany · Bakery overview** (menu card/actions), **Bethany · Edit weekly menu**
 - Next: A4
 
 ## Goal
 
-Let Bethany create menus, add bake dates, publish with notification settings, edit published menus, and cancel menus or dates with a reason.
+Let Bethany view/manage menus, edit the weekly menu (days, items summary, pickup/cutoff settings), publish with notifications, and cancel menus or dates.
 
 ## Non-goals
 
-- Item templates (A4).
-- Offerings and pickup windows (A5).
-- Push notification delivery (A7/A8).
+- Full item template authoring (A4).
+- Offering price/quantity/window assignment details beyond editor needs (A5).
+- Push delivery implementation (A7/A8).
 
 ## Screens
 
-### Menu list
+### Baker overview (home/dashboard context)
 
-- Tabs/filters: Draft, Published, Cancelled, All.
-- Rows:
-  - title
-  - status badge
-  - first bake date
-  - date count
-  - updated time
-- FAB: New menu.
-- Pull-to-refresh.
+- Route/tab: **Overview** (bottom nav: Overview / Menus / Orders).
+- Header: brand/logo, "Bethany’s", "Gluten Free Bakery", "BAKER’S VIEW"; greeting "Good morning, Bethany." and "A good week is rising." (time/context-aware copy acceptable).
+- Published weekly menu card:
+  - week label (e.g. "NOVEMBER 16–22"), **Live** badge when published.
+  - "This week’s menu" title, bake days summary (e.g. "Friday, Nov 20  ·  Sunday, Nov 22").
+  - actions: "Edit menu  →" (opens editor) and "Share link  ↗" (public menu link/copy/share as supported).
+- Snapshot and bake/pickup summary cards may appear (see A6 for operational details) plus "+ Create next week’s menu".
 
-### Menu editor
+### Menu list (Menus tab)
 
-- Title (required, 120 chars).
-- Notes (2000 chars).
-- Dates section:
-  - list with bake date, status, window/offering counts.
-  - add date via date picker.
-  - draft dates can be deleted.
-  - published dates can be cancelled with reason.
-  - tap date → A5 (offerings/windows).
-- Save draft.
-- Publish action:
-  - validation summary from server.
-  - notification toggle default ON.
-  - notification date/time: leave the field at its server-derived default; the app sends `notifyAt=null` (or omits it) so the server computes 4 days before the first bake date at 09:00 Denver. If the admin edits it, send the chosen instant.
-  - confirm dialog with summary.
-- Cancel menu:
-  - destructive confirmation.
-  - optional reason (max 500).
-  - explains active orders will be cancelled and refunds are manual.
-- Published menu:
-  - title/notes editable.
-  - add date (publishes immediately).
-  - no delete, only cancel.
-- Cancelled:
-  - read-only, reason shown.
+- Filters/tabs as needed (Draft/Published/Cancelled/All).
+- Rows: title/week, status, dates, updated time.
+- Create new menu; pull-to-refresh.
 
-### Date cancel
+### Weekly menu editor
 
-- Reason optional.
-- Warning: active orders are cancelled and customers notified.
-- Manual refund note.
+- Header: "This week’s menu" with status badge (e.g. **Live**); subtitle "November 16–22 · Changes save as a draft." (or accurate save state).
+- Baking days selector:
+  - day chips/tabs (e.g. "Fri, Nov 20", "Sun, Nov 22") and "+ Add a baking day".
+  - select day to edit its items and pickup settings.
+- Menu items section (per selected day as applicable):
+  - item editor cards (e.g. sourdough): photo thumbnail, "Replace photo  ↗" / upload (JPG/PNG), name, description, price per item, bake limit for day.
+  - reserved/remaining indicators (e.g. "18 ordered", "6 still available") and auto-sold-out note (e.g. "When all 24 are ordered, this item is automatically marked sold out for Friday.").
+  - manage additional items (e.g. "2 more items · Manage →") linking to full item/offering management (A4/A5).
+- Pickup & order cutoff (per day as applicable):
+  - "Pickup & order cutoff" section.
+  - fields: Pickup starts, Pickup ends, Slot length, Orders per slot, Orders close (datetime, e.g. "Thu, Nov 19  ·  6:00 pm").
+  - pickup address display/context (e.g. "Pickup address · 124 Maple Lane").
+  - times/slots must map to server pickup-window/capacity/cutoff model (`America/Denver`); align/update API/domain if slot-level fields are introduced.
+- Publish/notification:
+  - "Keep your customers in the loop" with copy like "Publishing sends a new-menu alert to subscribers."
+  - **Publish changes** action.
+  - notification enable/date defaults per server rules; show computed/default time when applicable.
+- Cancel menu/date flows with confirmation and optional reason (destructive).
+
+### Bottom navigation
+
+- **Overview**, **Menus**, **Orders**.
 
 ## Rules
 
-- Bake date must be today or later in America/Denver.
-- Publishing requires at least one date, one window, one offering per date, and offering/window assignments. Show field-level server errors.
-- If the admin does not edit the notification time, send `notifyAt=null`/omit it and display the server-computed value from the response. If edited, send the chosen instant. Do not compute the default on-device.
-- Notification can be disabled.
-- Adding a date to a published menu is immediate and sends no new menu announcement.
-- Destructive actions require explicit confirmation.
-- All times shown in America/Denver; the device timezone may differ. Label the timezone.
+- Bake dates/times interpreted in `America/Denver`; show timezone context where needed.
+- Draft changes saved explicitly/clearly; published/live menu edits follow server constraints.
+- Publish requires server-valid dates/windows/offerings/assignments; show validation errors.
+- Adding/publishing/cancelling follow domain state machines and audit/notification rules.
+- Slot length/orders-per-slot UI must produce valid server pickup windows/capacities (or be backed by equivalent API fields).
 
 ## API integration
 
-- `listMenus`
-- `createMenu`
-- `getMenu`
-- `updateMenu`
-- `deleteDraftMenu`
-- `publishMenu`
-- `cancelMenu`
-- `addMenuDate`
-- `getMenuDate`
-- `updateMenuDate`
-- `deleteDraftMenuDate`
-- `cancelMenuDate`
+- `listMenus`, `createMenu`, `getMenu`, `updateMenu`, `deleteDraftMenu`, `publishMenu`, `cancelMenu`
+- `addMenuDate`, `getMenuDate`, `updateMenuDate`, `deleteDraftMenuDate`, `cancelMenuDate`
+- Related offering/window/media endpoints as needed from A4/A5.
 
 ## Ordered tasks
 
-1. Menu list query and filters.
-2. Create/edit draft form with validation.
-3. Date picker and draft date CRUD.
-4. Publish flow with notification toggle/date and validation errors.
-5. Cancel menu/date dialogs and reason.
-6. Published-menu edit rules.
-7. Loading/empty/error/retry states.
-8. Tests with MockWebServer.
-9. Compose UI tests for publish/cancel.
-10. Seed/mock data for local previews.
+1. Overview/menu entry points and Menus tab list.
+2. Create/edit menu shell and draft save behavior.
+3. Baking day chips/add/remove/cancel per rules.
+4. Weekly editor item summary/photo/fields with reserved/remaining display.
+5. Pickup & order cutoff/slot settings mapped to server model.
+6. Publish flow with notification messaging and validation errors.
+7. Cancel flows and confirmations.
+8. Bottom nav and navigation to A4/A5/A6 screens.
+9. Tests (MockWebServer, Compose UI) and fixtures.
 
 ## Acceptance criteria
 
-- Given no menus, then an empty state with "New menu" appears.
-- Given a draft with title and date, then it saves and appears in Draft.
-- Given a draft missing windows/offerings, when publishing, then server validation errors are shown per field/date.
-- Given notification enabled, then the publish request includes it and the default time from server is displayed.
-- Given notification disabled, then the request disables it.
-- Given a published menu, then title/notes can be edited and dates can be added.
-- Given a published date, then delete is unavailable and cancel is available.
-- Given cancel with a reason, then the status updates and reason is shown.
-- Given a cancelled menu, then editing is blocked.
-- Given a device timezone other than Denver, then dates/times display with the correct Denver semantics.
-- Given a network failure, then the form state is preserved and retry is offered.
+- Given published menu, overview shows week, Live badge, bake days, Edit menu and Share link actions.
+- Given editor, baking days selectable and addable; selected day shows relevant items and pickup/cutoff settings.
+- Given item fields/limits, ordered vs available counts and sold-out behavior displayed accurately.
+- Given pickup starts/ends, slot length/orders per slot, and orders close, values persist and map to valid server windows/cutoff.
+- Given Publish changes, notification intent shown and server validation/errors handled.
+- Given cancel actions, confirmations/reasons/status updates correct.
+- Given draft/live states, save/publish/edit rules enforced.
 
 ## Test plan
 
-- MockWebServer: CRUD, publish validation errors, cancel.
-- Date math around DST.
-- Compose UI: create/publish/cancel flows, confirmation dialogs.
-- Offline/error state.
-- Accessibility: labels, destructive confirmation, status text.
+- Unit: date/timezone mapping, slot/window derivation, validation.
+- MockWebServer: menu/date CRUD, publish/cancel, validation errors.
+- Compose UI: overview, editor navigation, day switching, publish/cancel dialogs.
+- Accessibility: labels, controls, status badges, confirmations.
 
 ## Security checklist
 
-- [ ] Admin auth on every request.
+- [ ] Admin auth on requests.
 - [ ] Destructive actions confirmed.
-- [ ] Reasons escaped.
-- [ ] No PII in logs.
-- [ ] No local optimistic status changes before server confirmation.
-- [ ] Timezone explicit.
+- [ ] No PII/secrets in logs.
+- [ ] Server source of truth for counts/status; no unsafe optimistic mutations.
 
 ## Quality gate
 
@@ -146,10 +124,10 @@ Quality-gate results belong in the phase PR description.
 
 ## Definition of done
 
-Bethany can create, publish, edit, and cancel menus/dates from the app with clear warnings and errors.
+Overview and weekly menu editor match design and allow Bethany to manage menu days, key item/pickup settings, and publish/cancel flows safely.
 
 ## Handoff notes
 
-- A5 handles windows/offerings required for publish.
-- A7 handles notification queue/reminders; A3 only sets publish notification settings.
-- Menu cancellation order propagation is server-side (S5).
+- A4/A5 own deep template/customization and per-offering/window assignment editing; keep "Manage" links and data consistent.
+- If slot length/orders-per-slot requires model/API changes, update `docs/domain-model.md` and `docs/api/openapi.yaml` with this phase/change set.
+- Share-link behavior depends on public web route availability.

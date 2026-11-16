@@ -1,134 +1,96 @@
-# A5 — Offerings, Prices, Quantities, and Pickup Windows
+# A5 — Offerings, Prices, Quantities, and Pickup Windows/Slots
 
 - Status: ready
 - Depends on: A4, S4
 - Contract: `docs/api/openapi.yaml` → Admin Menus (offerings, pickup windows)
+- Design: `design examples/design_exmaples.json` → **Bethany · Edit weekly menu** (item limits, reserved/available, pickup & order cutoff, slot settings)
 - Next: A6
 
 ## Goal
 
-Let Bethany configure each bake date: pickup windows with order caps, and offerings with price, bake quantity, per-customer limits, window assignment, and customization overrides.
+Let Bethany configure bake-date offerings (price, bake limit, reserved/available) and pickup timing/capacity (windows/slots and order cutoff) in line with the weekly menu editor design.
 
 ## Non-goals
 
-- Item template editing (A4).
-- Order management (A6).
-- Customer UI (W3–W5).
+- Item template content authoring (A4).
+- Order fulfillment actions (A6).
 
 ## Screens
 
-### Bake date detail
+### In-editor offering/item settings (per bake day)
 
-- Header: bake date, menu status, reminder sent state.
-- Sections: Pickup windows, Offerings.
-- Actions: add window, add offering, preview availability.
-- Publish prerequisite warnings if menu is draft.
+- Item card/editor fields:
+  - photo, name, description.
+  - **Price per item**.
+  - **Friday bake limit** (day-specific quantity limit).
+  - **18 ordered** / **6 still available** (reserved/remaining) with clear counts.
+  - Auto-sold-out note: "When all <limit> are ordered, this item is automatically marked sold out for <day>."
+- Manage additional items / navigate to full offering detail as needed.
 
-### Pickup windows
+### Pickup & order cutoff
 
-- List: label, start–end, max orders, reserved/available.
-- Create/edit:
-  - label (60)
-  - start/end date-time on the bake date, America/Denver
-  - max orders (≥1)
-- Time picker uses Denver timezone regardless of device timezone; show timezone label.
-- Reducing max below reserved is allowed with a warning:
-  - existing orders honored
-  - no new orders until below limit
-- Delete only when no reserved orders and no offering assignment; otherwise explain.
+- Section: "Pickup & order cutoff".
+- Fields shown in design: **Pickup starts**, **Pickup ends**, **Slot length**, **Orders per slot**, **Orders close** (date/time).
+- Pickup address context shown (read-only display or editable per settings; align with domain/config).
+- UI may present slot-level controls; server mapping:
+  - must produce valid pickup windows with start/end, `max_orders`/capacity, and cutoff behavior per domain.
+  - if server currently models windows (not slots), derive windows/capacities accordingly and/or extend API/domain explicitly (no silent mismatch).
 
-### Offerings
+### Offering/window detail (full management)
 
-- List: photo, name, price, available/limit, reserved, max per customer, window count, status.
-- Add offering:
-  - select an active item template (searchable).
-  - snapshot preview of name/description/photo/ingredients/allergens/customizations.
-  - optional overrides for name, description, photo, ingredients, allergens.
-  - price in dollars (store cents).
-  - quantity limit (≥1).
-  - max per customer (optional).
-  - assign one or more pickup windows.
-  - customization override editor (same rules as A4) or "use template snapshot".
-- Edit:
-  - price, quantity limit, max per customer, windows, snapshot text/photo, customization snapshot.
-  - template selection is immutable; create a new offering to change templates.
-  - lowering quantity below reserved allowed with warning.
-- Cancel offering:
-  - allowed only when no active order lines; explain.
-- Availability preview: `max(0, quantityLimit - reservedCount)`.
+- Bake date detail: pickup windows and offerings lists with reserved/available, add/edit/delete/cancel rules.
+- Offering form: template snapshot/overrides, price (cents), quantity limit, max per customer, window assignment, customization overrides.
+- Window form: label/times/capacity; reduce-below-reserved warnings; delete constraints.
 
 ## Validation
 
-- Price: non-negative, two-decimal input, max reasonable (e.g. $999.99).
-- Quantity: 1–9999.
-- Max per customer: optional, 1–quantityLimit.
-- At least one window.
-- Windows must belong to the same bake date.
-- Offering snapshot customizations valid.
-- Item template must be active.
-- Duplicate template per date is rejected by unique constraint; show a clear error.
+- Price: non-negative (cents precision), reasonable max.
+- Quantity/bake limit: >=1; show reserved/available consistently.
+- Max per customer optional and bounded.
+- At least one valid pickup window/slot assignment for orderable offerings.
+- Pickup/cutoff times valid for bake date in `America/Denver`; orders close before relevant pickup as required.
+- Slot length/orders-per-slot must translate to consistent capacities (no overbooking by configuration).
+- Snapshot/customization rules per domain.
 
 ## API integration
 
-- `listPickupWindows`
-- `createPickupWindow`
-- `updatePickupWindow`
-- `deletePickupWindow`
-- `listOfferings`
-- `createOffering`
-- `getOffering`
-- `updateOffering`
-- `cancelOffering`
-- `getMenuDate`
-- `listItemTemplates`
+- `listPickupWindows`, `createPickupWindow`, `updatePickupWindow`, `deletePickupWindow`
+- `listOfferings`, `createOffering`, `getOffering`, `updateOffering`, `cancelOffering`
+- `getMenuDate`, `listItemTemplates`
 
 ## Ordered tasks
 
-1. Bake date detail shell and queries.
-2. Pickup window list/create/edit/delete.
-3. Timezone-safe date-time pickers.
-4. Offering list and availability display.
-5. Add offering with template picker and snapshot preview.
-6. Price/quantity/per-customer/window form.
-7. Customization override editor.
-8. Edit offering and reducing-limit warnings.
-9. Cancel offering flow.
-10. Tests with MockWebServer and Compose UI.
-11. Seed fixtures.
+1. Bake date/offering/window data queries and editor bindings.
+2. Item card fields for price, bake limit, ordered/available, sold-out note.
+3. Pickup & cutoff UI (starts/ends, slot length, orders per slot, orders close) with timezone-safe pickers.
+4. Mapping/validation between slot settings and server windows/capacities/cutoff.
+5. Full offering create/edit with template snapshot, overrides, assignments.
+6. Window create/edit/delete with warnings/constraints.
+7. Error handling, save states, and navigation from A3 editor.
+8. Tests (unit mapping/validation, MockWebServer, Compose UI).
 
 ## Acceptance criteria
 
-- Given a date, then windows and offerings load with reserved/available counts.
-- Given a valid window, then it saves and displays correct Denver times.
-- Given a device in another timezone, then window times still map to Denver.
-- Given max orders below reserved, then save succeeds with a warning.
-- Given a window with reserved orders, then delete is blocked with an explanation.
-- Given an active template, then an offering can be created with a snapshot preview.
-- Given an inactive template, then it cannot be selected.
-- Given no window selected, then save is blocked.
-- Given a window from another date, then save is blocked.
-- Given quantity 2 at $4.00, then available shows `2`, price displays `$4.00`.
-- Given a quantity reduction below reserved, then save succeeds and availability is 0.
-- Given an offering with active orders, then cancel is blocked.
-- Given a duplicate template for the date, then a clear error is shown.
-- Given a customization override, then it is saved on the offering and does not change the template.
+- Given item with bake limit and orders, editor shows ordered and still-available counts and correct sold-out-at-limit messaging.
+- Given pickup starts/ends, slot length, orders per slot, and orders close, configuration saves as valid server-recognized windows/capacity/cutoff (or clearly surfaced limitation if contract not yet extended).
+- Given device in non-Denver timezone, times reflect `America/Denver` semantics.
+- Given capacity/limit reductions below reserved, warnings shown and server rules respected.
+- Given offering/window conflicts (duplicate template, invalid assignment, delete blocked), clear errors shown.
+- Given A3 editor "Manage" flows, data stays consistent with A4/A5 models.
 
 ## Test plan
 
-- Unit: money parsing, timezone conversion, availability math, limit validation.
-- MockWebServer: window/offering CRUD, validation/conflict errors.
-- Compose UI: create/edit offering, template picker, customizations, warnings.
-- DST tests for window times.
-- Accessibility: time pickers, numeric fields, error text.
+- Unit: money/quantity math, availability (`limit - reserved`), slot-to-window derivation, timezone/DST.
+- MockWebServer: window/offering CRUD, conflicts/validation.
+- Compose UI: editor fields, pickers, warnings, save/publish readiness.
+- Accessibility: numeric/time inputs, labels, error text.
 
 ## Security checklist
 
-- [ ] Admin auth on all requests.
-- [ ] Client sends cents, not floats.
+- [ ] Admin auth; cents not floats.
 - [ ] No client-supplied reserved counts.
-- [ ] Destructive cancel confirmed.
+- [ ] Destructive actions confirmed.
 - [ ] Timezone explicit.
-- [ ] No PII.
 
 ## Quality gate
 
@@ -145,10 +107,10 @@ Quality-gate results belong in the phase PR description.
 
 ## Definition of done
 
-Bethany can fully configure a bake date's windows and offerings, including quantities and customizations, with safe warnings for live changes.
+Editor and detail screens support bake limits, availability counts, and pickup/cutoff/slot-capacity configuration consistent with design and server invariants.
 
 ## Handoff notes
 
-- A6 uses offering/order data for the bake list.
-- Publish validation happens in A3 but depends on this screen being complete.
-- Existing orders keep price/option snapshots after offering edits.
+- Slot-level UX in design may require explicit API/domain support; track as contract change if needed.
+- A6 depends on accurate reserved/available and window/slot capacities for operations views.
+- Existing orders retain snapshots after edits.

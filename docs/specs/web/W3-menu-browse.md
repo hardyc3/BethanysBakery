@@ -3,133 +3,137 @@
 - Status: ready
 - Depends on: W2, S3, S4
 - Contract: `docs/api/openapi.yaml` → Public menu read
+- Design: `design examples/design_exmaples.json` → **Customer · Weekly menu**
 - Next: W4
 
 ## Goal
 
-Show published bake dates, pickup windows, offerings, prices, photos, and live availability so customers can decide what to order.
+Show published bake dates/windows, offerings, prices, photos, and live availability so customers can browse and start building a basket from the weekly menu.
 
 ## Non-goals
 
-- Item detail and customizations (W4).
-- Cart/checkout (W5).
-- Order status (W6).
+- Full item customization/detail beyond what the menu card supports (W4).
+- Checkout submission and final validation (W5).
+- Order status/updates (W6/W7).
 
 ## Screens
 
-### Menu home
+### Weekly menu home
 
-- Route: `/`.
-- Heading with bakery name and current menu context.
-- Date selector:
-  - horizontal chips on mobile, list/segmented control on larger screens.
-  - shows weekday, date, and sold-out/closed state.
-  - defaults to the earliest available date.
-  - URL state: `?date=<menuDateId>` for shareability.
-- Pickup window selector:
-  - appears after date selection.
-  - shows label, time range, capacity remaining.
-  - full windows disabled with "Full".
-  - cutoff-passed windows disabled with "Ordering closed".
-- Offering grid:
-  - photo from `photoUrl`, with `srcset`/`sizes` built from `photoVariants` keys `400`, `800`, `1600`; lazy loaded, aspect ratio reserved.
-  - name, short description
-  - price
-  - availability: "12 left" / "Sold out"
-  - allergen chips
-  - "View" link to W4 (item detail).
-  - "Ingredients" link to W4 ingredients section (`#ingredients`) so customers can view the ingredient list directly from the menu card.
-- Sold-out offerings remain visible with a clear sold-out notice/badge; detail view is allowed but ordering actions are disabled in W4.
-- Empty states:
-  - no published dates
-  - date with no offerings
-  - all offerings sold out
-  - ordering closed
+- Route: `/` (customer **Menu** tab).
+- Top bar/brand:
+  - bakery logo, "Bethany’s", "Gluten Free Bakery", tagline "SMALL BATCH · HOMEMADE".
+- Hero/intro:
+  - eyebrow: "FROM MY KITCHEN TO YOUR TABLE".
+  - heading: "A little homemade\nhappiness."
+  - subheading: "This week’s bakes · <date range>" (e.g. `November 16–22`) derived from the current published menu/week.
+- Baking day / pickup selector:
+  - horizontal day chips/cards per bake day (e.g. "Fri, Nov 20" with "Pickup 4–6 pm", "Sun, Nov 22" with "Pickup 10 am–12 pm").
+  - defaults to earliest available bake day.
+  - selected day drives menu list.
+  - URL state: `?date=<menuDateId>` for shareability; include window context if multiple windows exist.
+  - if a bake day has multiple pickup windows/times, expose window choice clearly while preserving compact chip/card feel.
+  - full/closed windows/days disabled with clear labels.
+- Order cutoff notice:
+  - prominent notice near selector (e.g. "Preorder by Thursday at 6 pm") from server-provided cutoff.
+- Menu section heading:
+  - contextual heading (e.g. "Made for Friday") + item count (e.g. "3 bakes").
+- Offering cards/list:
+  - photo thumbnail (lazy, aspect ratio reserved, responsive variants/srcset when available).
+  - name and short descriptor (e.g. "Slow-fermented · 1 loaf").
+  - price.
+  - availability pill: "<X> left" or "Sold out".
+  - inline quantity stepper for available items (e.g. `−  1  +`) to add/update basket quantity; bounded by availability/per-customer/99.
+  - sold-out items: show "Sold out" and "Back another week" (no stepper/add).
+  - tap name/photo opens item detail/customization (W4) when item has options or more info; ingredient list must remain reachable from detail (`#ingredients`).
+- Sticky bottom basket bar (when cart has items):
+  - "View basket  ·  <n> items  ·  $<total>" → cart/checkout (W5).
+- Bottom navigation:
+  - **Menu**, **My orders**, **Updates**.
+- Empty/loading/error states:
+  - no published menu/dates (friendly branded empty state).
+  - date with no offerings, all sold out, ordering closed.
 - Refresh:
-  - refetch on focus.
-  - poll every 45 seconds while the menu page is visible.
-  - manual refresh control.
-  - do not flicker sold-out state; keep previous data during refetch.
+  - refetch on focus; poll every 45s while visible; manual refresh.
+  - keep previous data during refetch (no flicker).
 
-### Availability copy
+### Availability copy/states
 
-- `availableQuantity > 0`: "X left" (hide exact count if > 9? Keep exact; scale is small.)
-- `availableQuantity == 0`: "Sold out".
-- window `availableCapacity == 0`: "Full".
-- cutoff passed: "Ordering closed".
+- `availableQuantity > 0`: "<X> left".
+- `availableQuantity == 0`: "Sold out" + "Back another week"; ordering disabled.
+- window/day full: disabled/"Full".
+- cutoff passed: disabled/"Ordering closed" with cutoff notice.
 
 ## Data and state
 
-- Query keys:
-  - `['menu-dates', from, to]`
-  - `['menu-date', menuDateId]`
-- `staleTime`: 15 seconds.
-- `refetchOnWindowFocus: true`.
-- No caching of availability across sessions.
-- Selected date/window persisted in URL only, not localStorage.
-- Use server-provided `orderCutoffAt`; do not recompute cutoff client-side except for display countdown.
+- Query keys: `['menu-dates', from, to]`, `['menu-date', menuDateId]`.
+- `staleTime`: 15s; `refetchOnWindowFocus: true`.
+- No caching availability across sessions.
+- Selected date/window in URL.
+- Cart store shared with W4/W5 (session-scoped, `bb_cart_v1` or agreed version): scoped to one `menuDateId` and one `pickupWindowId`; changing date/window requires confirm/clear.
+- Use server-provided `orderCutoffAt`.
 
 ## API integration
 
 - `listPublicMenuDates`
 - `getPublicMenuDate`
-- `getPublicOffering` for detail links (W4 owns the detail screen).
+- `getPublicOffering` (detail/customization in W4).
 
 ## Components
 
-- `DateSelector`
-- `PickupWindowSelector`
-- `OfferingCard`
+- `MenuHeader`/brand block
+- `DatePickupSelector`
+- `OrderCutoffNotice`
+- `OfferingCard` (photo, descriptor, price, availability, stepper/sold-out)
 - `AvailabilityBadge`
-- `AllergenChips`
-- `MenuEmptyState`
-- `MenuLoadingSkeleton`
-- `RefreshButton`
+- `BasketBar`
+- `CustomerBottomNav`
+- `MenuEmptyState`, `MenuLoadingSkeleton`, `RefreshButton`
 
 ## Ordered tasks
 
-1. Add public menu API functions and types.
-2. Implement date list query and URL state.
-3. Implement date detail query and window selector.
-4. Build offering grid/cards and availability badges.
-5. Add sold-out, full, closed, and empty states.
-6. Add polling, focus refetch, and manual refresh.
-7. Add responsive layout and image handling.
-8. Add tests with MSW.
-9. Add Playwright menu smoke.
-10. Document query keys and cache behavior.
+1. Add public menu API functions/types and cart-store contract (shared with W4/W5).
+2. Implement brand header/hero and menu-week context.
+3. Implement date/pickup selector and URL state.
+4. Implement menu section heading, item count, and offering cards.
+5. Add inline quantity stepper, sold-out/back-next-week states, and cart updates.
+6. Add sticky basket bar and bottom navigation.
+7. Add cutoff notice, full/closed/empty states.
+8. Add polling/focus refetch/manual refresh and image handling.
+9. Add responsive layout and accessibility.
+10. Add tests (MSW) and Playwright smoke.
+11. Document query keys, cart/date-window scoping, and cache behavior.
 
 ## Acceptance criteria
 
-- Given published dates, when the page loads, then the earliest date is selected and offerings appear.
-- Given no dates, then a friendly "No menus yet" state appears.
-- Given a date URL parameter, then that date is selected on load and invalid IDs fall back safely.
-- Given an offering with zero availability, then it shows a clear "Sold out" notice/badge (customer notified in-app) and ordering is unavailable; the item detail may still be opened to view ingredients/allergens.
-- Given an offering card, then an "Ingredients" link navigates to the item's ingredient list on the detail view.
-- Given a full window, then it is disabled and labeled "Full".
-- Given cutoff passed, then the window shows "Ordering closed".
-- Given a refetch returns fewer items, then availability updates without layout jump.
-- Given an image fails, then a placeholder is shown.
-- Given 360 px width, then cards stack and text does not overflow.
-- Given keyboard navigation, then date/window controls and offering/ingredient links are usable.
+- Given published dates, when page loads, then earliest available day is selected and offerings render with week/date context.
+- Given day chips, then selected day shows pickup time/context and menu heading/count for that day.
+- Given an available item, then quantity stepper updates cart and basket bar shows items/total.
+- Given "View basket", then user navigates to cart/checkout.
+- Given a sold-out item, then "Sold out" and "Back another week" show and no quantity can be added.
+- Given cutoff passed/full window, then ordering controls disabled with clear notice.
+- Given no published menu, then friendly empty state appears.
+- Given refetch with changed availability, then UI updates without flicker/jump.
+- Given nav tabs, then Menu/My orders/Updates routes are reachable.
+- Given 360px width, then layout stacks, text readable, basket bar/nav usable.
 
 ## Test plan
 
-- Component/query tests: loading, success, empty, error.
-- Availability badge states.
-- URL state and invalid date fallback.
-- Polling/focus refetch behavior with fake timers.
-- Image error fallback.
-- Playwright: menu loads, date switch, sold-out disabled.
-- Accessibility: image alt text, button labels, headings.
+- Component/query: loading, success, empty, error.
+- Selector/date URL state and invalid fallback.
+- Stepper bounds, cart totals, cross-date/window confirm behavior.
+- Availability/sold-out/full/closed states and cutoff display.
+- Polling/focus refetch with fake timers; image fallback.
+- Playwright: browse → select day → adjust qty → view basket.
+- Accessibility: chip/stepper labels, headings, nav, contrast/focus.
 
 ## Security checklist
 
-- [ ] Only published data is rendered.
+- [ ] Only published data rendered.
 - [ ] No raw HTML from descriptions.
-- [ ] External image URLs allowed only from the API base.
-- [ ] Links use safe navigation.
+- [ ] Image URLs restricted to allowed/API origins.
 - [ ] No PII in URLs.
+- [ ] Client prices/totals display-only; server authoritative at checkout.
 
 ## Quality gate
 
@@ -146,10 +150,10 @@ Quality-gate results belong in the phase PR description.
 
 ## Definition of done
 
-The menu page is usable on mobile, availability is clear and live, empty/error states are handled, and W4 can link to item detail.
+Menu browse matches the weekly-menu design: branded hero, day/pickup selection, cutoff, item cards with availability/stepper, basket bar, and bottom nav, with live availability and safe cart scoping.
 
 ## Handoff notes
 
-- W4 uses `offeringId` from the card and the selected `menuDateId`/`pickupWindowId`.
-- Availability may change between browse and checkout; W5 revalidates on submit.
-- If many dates are added later, add pagination/date range limits.
+- W4 handles item customization/detail and cart-line merge rules for options/notes.
+- W5 revalidates cart and submits order; availability may change between browse and checkout.
+- Design shows inline quantity on menu; if an item requires customizations, stepper/add should route into W4 configuration flow before adding.

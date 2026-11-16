@@ -593,6 +593,7 @@ Template edits never change published offerings. Offering edits never change exi
 | `ORDER_CANCELLED` | Order customer | Customer/admin/system cancels | Email, SMS if consented |
 | `ORDER_EXPIRED` | Order customer | Cutoff expiry | Email |
 | `MENU_CANCELLED` | Opted-in customers + active order customers | Menu/date cancel | Email, SMS if consented |
+| `ORDER_PAID` (admin bake trail) | Admin (`ADMIN_ALERT_EMAIL`) | Order payment marked `PAID` | Email with full bake/fulfillment order details; durable paper trail |
 | Admin new order | Admin | Order created | FCM + email fallback |
 
 Idempotency keys:
@@ -600,6 +601,7 @@ Idempotency keys:
 - Menu publish: `menu:{menuId}:published`
 - Reminder: `menu-date:{menuDateId}:reminder:{customerId}`
 - Order event: `order:{orderId}:{eventType}`
+- Admin paid order: `order:{orderId}:paid`
 - Admin new order: `order:{orderId}:admin-new`
 - Expiry: `order:{orderId}:expired`
 

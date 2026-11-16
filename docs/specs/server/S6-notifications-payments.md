@@ -52,6 +52,9 @@ Rules:
 - No customer-facing cash option.
 - Audit `ORDER_PAID` / `ORDER_PAYMENT_CORRECTED`.
 - No automatic customer notification for payment status; customer sees it in the app.
+- On transition to `PAID` (`paid=true`), queue an admin `ORDER_PAID` email to `ADMIN_ALERT_EMAIL` in the same transaction as the payment update/outbox write. This is a durable digital paper trail for bake-day operations if the database later fails.
+- `ORDER_PAID` email content must include everything needed to bake and fulfill: order number, bake date, pickup window, customer name and contact snapshots, item lines with quantities, selected options/customizations, line/order notes, totals, payment status/method, and `paid_at`.
+- On correction to `UNPAID` (`paid=false`), do not send `ORDER_PAID`; audit only. Duplicate paid requests/retries must be deduped by `order:{orderId}:paid` (v1: do not resend if already sent/queued for that order).
 
 Venmo instructions are built from config:
 
@@ -90,14 +93,16 @@ Venmo instructions are built from config:
 | `ORDER_CANCELLED` | order customer | immediately |
 | `ORDER_EXPIRED` | order customer | immediately |
 | `MENU_CANCELLED` | opted-in customers + active order customers | immediately |
+| `ORDER_PAID` | admin (`ADMIN_ALERT_EMAIL`) | immediately on transition to `PAID` |
 | Admin new order | admin | immediately |
-| Admin push fallback | admin email | when no active FCM token or push fails |
+| Admin push fallback | admin email | when no active FCM token or push fails for new order |
 
 Idempotency keys:
 
 - `MENU_PUBLISHED:<menuId>`
 - `ORDER_REMINDER:<menuDateId>:<customerId>`
 - `<ORDER_EVENT>:<orderId>` for `ORDER_ACCEPTED`, `ORDER_READY`, `ORDER_DELAYED`, `ORDER_REJECTED`, `ORDER_CANCELLED`, `ORDER_EXPIRED`
+- `order:{orderId}:paid` for the admin paid-order email (one per paid transition; payment correction to `UNPAID` does not send)
 - `MENU_CANCELLED:<menuId>:<customerId>` for menu cancellation, or `MENU_CANCELLED:<menuDateId>:<customerId>` for date cancellation
 - `ADMIN_NEW_ORDER:<orderId>` for push and `ADMIN_NEW_ORDER_EMAIL:<orderId>` for the fallback email
 
@@ -205,10 +210,13 @@ Implementations:
   - Push to all active admin devices with FCM token.
   - If none succeed, email `ADMIN_ALERT_EMAIL`.
   - If push fails for a token, clear it.
+- Order paid (bake-day paper trail):
+  - On successful transition to `PAID`, send email to `ADMIN_ALERT_EMAIL` with full bake/fulfillment order details (see Payments).
+  - This email is required regardless of admin FCM token state; delivery failures follow normal retry/backoff and appear in admin notification list for retry.
 - Admin notification list:
   - `GET /admin/v1/notifications?status=`.
   - `POST /admin/v1/notifications/{id}/retry`.
-- Delivery rows include masked destinations only.
+- Delivery rows include masked destinations only. Admin-facing emails (new-order fallback, `ORDER_PAID`) may contain order/customer details necessary for operations; logs and API delivery metadata must still mask destinations and avoid unnecessary PII leakage.
 
 ## API operations
 
@@ -240,8 +248,9 @@ Implementations:
 
 ## Acceptance criteria
 
-- Given a pending order, when admin marks paid with `VENMO`, then status is `PAID`, `paid_at` set, and audit recorded.
-- Given a paid order, when admin corrects to unpaid, then status is `UNPAID` and audit recorded.
+- Given a pending order, when admin marks paid with `VENMO`, then status is `PAID`, `paid_at` set, audit recorded, and an admin `ORDER_PAID` email is queued/sent to `ADMIN_ALERT_EMAIL` containing full bake/fulfillment order details (order number, bake date, pickup window, customer snapshots, items/options/notes, totals, payment method, `paid_at`).
+- Given a paid order, when admin corrects to unpaid, then status is `UNPAID`, audit recorded, and no `ORDER_PAID` email is sent.
+- Given an order already marked paid, when the same paid update is retried/duplicated, then no duplicate `ORDER_PAID` admin email is sent (idempotent by `order:{orderId}:paid`).
 - Given an accepted order, then the customer gets an email (local log) with Venmo handle and amount.
 - Given a ready order, then the customer gets email/SMS (per preference) with the maps link.
 - Given a customer without SMS consent, when preferences enable SMS, then 400 `SMS_CONSENT_REQUIRED`.
@@ -259,16 +268,16 @@ Implementations:
 
 ## Test plan
 
-- Unit: template rendering, preference suppression, quiet hours, retry backoff, idempotency keys.
-- Integration: payment marking/correction, audit.
+- Unit: template rendering, preference suppression, quiet hours, retry backoff, idempotency keys (including `order:{orderId}:paid`).
+- Integration: payment marking/correction, audit, and `ORDER_PAID` admin email queued on paid transition with full bake/fulfillment details; no email on correction to unpaid; no duplicate on retry.
 - Integration: preference defaults and SMS consent validation.
 - Integration: order event → notification rows → provider call (WireMock).
 - Integration: menu publish scheduler with fixed clock.
 - Integration: reminder scheduler audience selection.
 - Integration: STOP/START webhook signature and consent.
-- Integration: FCM invalid token removal and email fallback.
-- Integration: admin retry.
-- Security: no PII/secret leakage in logs; HTML escaping.
+- Integration: FCM invalid token removal and new-order email fallback.
+- Integration: admin retry for failed `ORDER_PAID` email.
+- Security: no PII/secret leakage in logs; HTML escaping for email templates; admin email payload contains only necessary order/fulfillment data.
 
 ## Security checklist
 

@@ -3,6 +3,7 @@
 - Status: ready
 - Depends on: A3, S3
 - Contract: `docs/api/openapi.yaml` → Admin Catalog
+- Design: `design examples/design_exmaples.json` → **Bethany · Edit weekly menu** (item photo/name/description fields and "Replace photo" affordance in editor context)
 - Next: A5
 
 ## Goal

@@ -3,137 +3,121 @@
 - Status: ready
 - Depends on: W3, S4
 - Contract: `docs/api/openapi.yaml` → `getPublicOffering`
+- Design: `design examples/design_exmaples.json` → **Customer · Weekly menu** (item cards, ingredients/detail entry)
 - Next: W5
 
 ## Goal
 
-Let customers inspect an item, read ingredients/allergens, choose valid customizations and quantity, see the price update live, and add the configured line to the cart.
+Let customers inspect an item, read ingredients/allergens, choose valid customizations and quantity, see price updates, and add/update the configured line in the basket.
 
 ## Non-goals
 
-- Checkout and pickup window confirmation (W5).
-- Payment (W6).
+- Checkout submission and pickup confirmation (W5).
+- Payment/status (W6).
 - Admin editing (A4/A5).
 
 ## Screen
 
-Route: `/menu/:menuDateId/items/:offeringId?window=<pickupWindowId>`.
+Route: `/menu/:menuDateId/items/:offeringId?window=<pickupWindowId>` (or modal/sheet from menu, same content contract).
 
 Sections:
 
 1. Photo (hero, responsive variants).
-2. Name, description, price.
-3. Availability ("X left" / "Sold out") — clear in-app sold-out notice when unavailable.
+2. Name, short descriptor, price.
+3. Availability: "<X> left" / "Sold out" with clear in-app notice.
 4. Ingredients (`id="ingredients"`):
-   - accessible via direct link/anchor from menu cards.
-   - collapsed disclosure by default, expanded when opened via `#ingredients`.
+   - reachable from menu/detail; expanded when opened via `#ingredients`.
    - free-text list, preserve line breaks.
-5. Allergens:
-   - prominent chips.
-   - optional warning text if tags exist.
-6. Customization groups:
-   - rendered in `sortOrder`.
-   - single-select uses radios.
-   - multi-select uses checkboxes with min/max.
-   - required marker.
-   - unavailable options disabled and labeled.
-   - price delta shown per option (`+$0.50`, `Included`).
-   - group-level validation messages.
-7. Quantity stepper (1–99, bounded by per-customer/availability where known).
-8. Notes field (optional, max 300 chars) for the line.
-9. Sticky footer:
-   - computed unit price
-   - line total
-   - Add to cart
-   - disabled when sold out/cutoff/closed or invalid.
-10. Sold-out state:
-    - show item info but disable add.
-    - explain that availability changed.
+5. Allergens: prominent chips/tags and warning text when present.
+6. Customization groups (if any):
+   - in `sortOrder`; single-select radios, multi-select checkboxes with min/max.
+   - required marker; unavailable options disabled/labeled.
+   - price delta per option (`+$0.50`, `Included`).
+   - group-level validation.
+7. Quantity stepper (bounded by availability, per-customer limit, and 99).
+8. Notes (optional, max 300 chars).
+9. Sticky footer/action area:
+   - computed line/unit total when relevant.
+   - primary action: Add to basket / Update basket (or equivalent) and/or "View basket".
+   - disabled when sold out, cutoff/closed, or invalid.
+10. Sold-out: item info/ingredients visible, ordering disabled, show "Sold out"/"Back another week" messaging consistent with W3.
+
+## Menu integration
+
+- Simple items without required customizations may be added/adjusted via inline stepper on W3 menu cards.
+- Items requiring customization/notes must route to this detail flow before add.
+- Basket bar ("View basket · n items · $total") remains visible/consistent with W3.
 
 ## Cart state
 
-Introduce a cart store in this phase.
-
-- `CartProvider` with reducer.
-- Persist to `sessionStorage` under `bb_cart_v1`.
-- Cart is scoped to one `menuDateId` and one `pickupWindowId`.
-- If an item is added from a different date/window:
-  - show a confirm dialog: "Start a new cart?"
-  - on confirm, clear and add.
+- Shared cart store (provider/reducer) with W3/W5.
+- Persist to `sessionStorage` under `bb_cart_v1` (bump version if shape changes).
+- Scoped to one `menuDateId` and one `pickupWindowId`.
+- Different date/window: confirm "Start a new cart?" then clear and add.
 - Cart line identity: `offeringId` + sorted `optionIds` + line notes.
-- If the same identity is added, increment quantity up to 99.
-- Store snapshots for display:
-  - offeringId, itemName, unit price, selected options (group/option names, deltas), quantity, notes, photo URL, available quantity at add time.
-- Server remains authoritative; W5 revalidates.
+- Same identity increments quantity (max 99 / limits).
+- Store display snapshots: offeringId, itemName, descriptor, unit price, options (names/deltas), quantity, notes, photo URL, availability at add time.
+- Server authoritative; W5 revalidates.
 
 ## Validation
 
-- SINGLE required: exactly one.
-- SINGLE optional: zero or one.
-- MULTI: between min and max.
-- Option IDs unique.
-- Quantity >= 1.
-- Notes length.
-- Do not trust client prices at checkout; use server totals.
+- SINGLE required: exactly one; SINGLE optional: zero or one.
+- MULTI: between min/max.
+- Unique option IDs; quantity >= 1; notes length.
+- Do not trust client prices at checkout.
 
 ## Price computation
 
 - `unitPrice = offering.priceCents + sum(selected option deltas)`.
 - `lineTotal = unitPrice * quantity`.
-- Display with the shared money helper.
-- Show a breakdown when deltas exist.
+- Shared money helper (USD); show breakdown when deltas exist.
 
 ## API integration
 
 - `getPublicOffering`.
-- Use menu date/window context from W3.
-- If offering no longer available, show 409/404 state and link back to menu.
-- Refetch offering on focus; if availability drops to 0, disable add.
+- Use selected `menuDateId`/`pickupWindowId` from W3.
+- 409/404/unavailable: explain and link back to menu.
+- Refetch on focus; disable add if unavailable.
 
 ## Ordered tasks
 
-1. Add offering detail query and types.
-2. Build detail layout and disclosures.
-3. Build customization controls with validation.
-4. Implement price breakdown.
-5. Implement quantity and notes.
-6. Add cart provider/reducer and sessionStorage persistence.
-7. Implement add-to-cart and cross-date/window confirmation.
-8. Add sold-out/closed states.
-9. Add tests for option rules and cart identity.
-10. Add Playwright add-to-cart smoke.
+1. Add offering detail query/types and shared cart contract usage.
+2. Build detail layout, ingredients/allergen sections, and `#ingredients` behavior.
+3. Build customization controls and validation.
+4. Implement price breakdown, quantity, notes.
+5. Implement add/update/cart merge and cross-date/window confirmation.
+6. Integrate with W3 inline-add/basket bar behavior.
+7. Add sold-out/closed states.
+8. Add tests for option rules, cart identity, and persistence.
+9. Add Playwright add/customize smoke.
 
 ## Acceptance criteria
 
-- Given an item with a required single-select group, when no option is chosen, then Add is disabled and an error is shown.
-- Given a multi-select group with min 1/max 2, when 3 options are chosen, then the third is prevented or an error is shown.
-- Given a +$1 option and quantity 2, then the line total shows `(item + 1) * 2`.
-- Given an unavailable option, then it is disabled and cannot be selected.
-- Given a sold-out item, then Add is disabled and the sold-out state is clearly explained (in-app notification, no separate message required).
-- Given navigation to `#ingredients`, then the ingredient list section is focused/expanded and readable.
-- Given the same configuration is added twice, then one cart line has quantity 2.
-- Given a different option set, then a separate cart line is created.
-- Given a cart from date A and adding from date B, then a confirmation clears the old cart.
-- Given a page refresh, then the cart is restored from sessionStorage.
-- Given allergens, then they are visible without expanding ingredients.
-- Given 360 px width, then the sticky footer does not cover content.
+- Given item with required customization, menu add routes to detail and Add blocked until valid.
+- Given valid multi-select min/max, selection constraints enforced.
+- Given option price delta and quantity, line total correct.
+- Given unavailable option, disabled.
+- Given sold-out item, info/ingredients visible but add disabled with "Back another week"/sold-out notice.
+- Given `#ingredients` navigation, ingredients visible/focused.
+- Given same configuration added twice, quantities merge; different config creates separate line.
+- Given different date/window, confirmation clears cart.
+- Given refresh, cart restored from sessionStorage.
+- Given allergens, visible without needing to hunt.
 
 ## Test plan
 
-- Unit: option validation, price calculation, cart identity/merge.
-- Component: single/multi groups, min/max, required, disabled options.
-- Component: sold-out and cutoff states.
-- Cart persistence and cross-date confirmation.
-- Playwright: item detail → customize → add → cart indicator.
-- Accessibility: radiogroup/checkbox group labels, errors announced.
+- Unit: validation, price calc, cart identity/merge/persistence.
+- Component: option groups, sold-out/cutoff, notes, ingredients anchor.
+- Integration with W3 basket/stepper behavior.
+- Playwright: menu/detail → customize → add/update → basket.
+- Accessibility: labels, group semantics, errors announced, focus.
 
 ## Security checklist
 
 - [ ] No raw HTML for descriptions/ingredients.
-- [ ] Option IDs come only from the API response.
-- [ ] Prices are display-only; checkout uses server totals.
-- [ ] Notes are escaped.
-- [ ] Cart storage contains no PII/tokens.
+- [ ] Option IDs only from API response.
+- [ ] Prices display-only; checkout server-authoritative.
+- [ ] Notes escaped; cart storage has no PII/tokens.
 
 ## Quality gate
 
@@ -150,10 +134,10 @@ Quality-gate results belong in the phase PR description.
 
 ## Definition of done
 
-Customers can configure items with valid customizations, see accurate prices, and add them to a persistent cart. W5 can read the cart contract.
+Customers can configure items and manage basket lines with correct pricing/validation; W3 inline add and W5 checkout share a consistent cart contract.
 
 ## Handoff notes
 
-- W5 must revalidate all cart lines against the server and handle sold-out/cutoff/limit errors.
-- Cart schema version `bb_cart_v1`; bump if the shape changes.
-- Do not store prices as floats.
+- W5 must revalidate all lines and handle sold-out/cutoff/limit/customization errors.
+- Keep cart schema versioned (`bb_cart_v1`).
+- Do not store money as floats.

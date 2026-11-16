@@ -1,148 +1,110 @@
-# A6 — Orders, Payments, and Bake List
+# A6 — Orders, Payments, Bake List, and Bakery Overview
 
 - Status: ready
 - Depends on: A5, S5, S6
 - Contract: `docs/api/openapi.yaml` → Admin Orders
+- Design: `design examples/design_exmaples.json` → **Bethany · Bakery overview**, **Bethany · Pickup orders**
 - Next: A7
 
 ## Goal
 
-Give Bethany a day-of-operations view: orders by bake date, accept/reject, mark paid/unpaid, mark ready/completed, delay/cancel, and a consolidated bake list.
+Provide bakery operations views: overview snapshot/bake readiness, pickup orders management by slot with prep/payment actions, order detail actions, and bake list.
 
 ## Non-goals
 
-- Sending menu/reminder notifications (A7).
-- Refunds (manual).
-- Customer messaging beyond status notifications.
+- Notification campaign/reminder management UI beyond in-flow actions (A7).
+- Automated refunds.
 
 ## Screens
 
-### Orders
+### Overview (operations snapshot)
 
-- Filters:
-  - bake date (default today or next bake date)
-  - status
-  - payment status
-- Summary cards: pending, accepted, ready, completed, unpaid.
-- Rows:
-  - order number
-  - customer name
-  - item count
-  - total
-  - pickup window
-  - status + payment badges
-- Pull-to-refresh; refetch on focus; manual refresh.
-- Pagination.
+- Part of **Overview** tab (with A3 menu card).
+- Day snapshot cards (e.g. Friday): **Orders** (18), **Items to bake** (72), **Order total** ($318).
+- "Friday’s bake list" / capacity summary by item:
+  - item photo/name, ordered vs limit progress (e.g. 18/24), "6 more available" or "Sold out · Orders closed".
+- Next pickup reminder: "Next up: Friday pickups" with time window and order count (e.g. "4–6 pm · 18 orders to get ready") and "View pickup orders  →".
+- Data from summary/bake-list/orders endpoints for selected date.
+
+### Pickup orders
+
+- Route/tab: **Orders** (bottom nav Overview/Menus/Orders).
+- Header: "Pickup orders" with total count badge (e.g. "18 orders").
+- Date selector (e.g. "Friday, November 20  ⌄").
+- Filters/chips: **All 18**, **To prep 12**, **Ready 6** (map to server statuses/queues; counts reflect filtered totals).
+- Grouping by pickup slot/time:
+  - slot header "4:00 pm" with capacity text (e.g. "5 of 6 slots booked").
+- Order cards:
+  - customer name and total (e.g. "Jamie Parker", "$22").
+  - order number and item summary (e.g. "#B1042 · 1 sourdough · 2 cinnamon rolls").
+  - badges: payment ("Payment pending" / "Paid") and prep/status ("To prepare", "Ready for pickup").
+  - actions (contextual):
+    - "Confirm Venmo payment  →" when unpaid/payment needs confirmation (maps to mark paid/payment update flow as appropriate).
+    - "Mark ready & notify" for orders to prepare (marks ready and triggers ready notification per server rules).
+    - "Mark picked up" for ready orders (marks completed/picked up).
+- Footer/help text: "Marking an order ready sends the customer\na pickup notification."
+- Pull-to-refresh/manual refresh; preserve state.
 
 ### Order detail
 
-- Order number, created time, status/payment.
-- Customer name, email, phone with tap-to-copy/email/call.
-- Pickup window/date.
-- Lines with options, quantities, unit/line totals.
-- Notes.
-- Reasons/timestamps for accepted/ready/completed/rejected/cancelled/delay.
-- Actions by state:
-  - `PENDING`: Accept; Reject (reason required).
-  - `ACCEPTED`: Mark ready; Mark paid/unpaid; Delay; Cancel.
-  - `READY`: Mark completed; Mark paid/unpaid; Delay; Cancel.
-  - `COMPLETED`: Mark paid/unpaid (correction).
-  - Terminal: no status actions; payment correction only if allowed.
-- Payment:
-  - Paid/Unpaid toggle.
-  - Method selection: Venmo, Cash, Other. Hidden customer-side; admin-only.
-  - Confirmation for corrections.
-- Delay:
-  - warning; optional reason; sends notification.
-- Cancel:
-  - destructive confirmation; reason required; explains manual refund if paid.
-- Accept after cutoff: show server `CUTOFF_PASSED` and refresh.
+- Full detail: customer contact (copy/call/email), lines/options/notes, totals, timestamps/reasons.
+- Actions by state/payment (admin): accept/reject (reason), mark ready/completed, mark paid/unpaid (method Venmo/Cash/Other admin-only), delay/cancel with confirmations; handle 409 by refresh/explain. (Retain/align with server-supported transitions.)
+- Times in `America/Denver`.
 
 ### Bake list
 
-- Date picker.
-- Total order count.
-- Items:
-  - item name, total quantity
-  - option counts (group/option)
-- Large, readable layout for kitchen use.
-- Refresh.
-- Excludes pending/cancelled/rejected/expired (server behavior).
+- Date picker; consolidated quantities and option counts for active bakeable orders (exclude pending/cancelled/rejected/expired as per server).
+- Kitchen-readable layout; refresh.
 
 ## Rules
 
-- All mutations use server response as truth; no optimistic status changes.
-- Accept/reject only pending.
-- Ready only accepted.
-- Completed only ready.
-- Payment can be corrected with audit.
-- Cash is not advertised to customers.
-- Destructive actions require confirmation.
-- Handle 409 by refreshing and explaining.
-- Show times in America/Denver.
+- Server is source of truth; no optimistic status/payment mutations.
+- "To prep"/"Ready"/"Picked up" UI must map to domain statuses (`PENDING`/`ACCEPTED` → prep flows, `READY`, `COMPLETED`, etc.) without inventing unsupported transitions.
+- "Confirm Venmo payment" and payment badges reflect admin payment confirmation (manual Venmo/cash/other) and audit rules.
+- "Mark ready & notify" combines ready transition + customer notification when supported; show failure/retry states.
+- Destructive/impactful actions require confirmation; 409 conflicts refresh and explain.
 
 ## API integration
 
-- `listAdminOrders`
-- `getAdminOrder`
-- `acceptOrder`
-- `rejectOrder`
-- `markOrderReady`
-- `markOrderCompleted`
-- `cancelAdminOrder`
-- `updateOrderPayment`
-- `notifyOrderDelayed`
-- `getBakeList`
-- `getAdminSummary`
-- `sendMenuDateReminder` (A7 entry point; can live in bake list header)
+- `listAdminOrders`, `getAdminOrder`
+- `acceptOrder`, `rejectOrder`, `markOrderReady`, `markOrderCompleted`
+- `cancelAdminOrder`, `updateOrderPayment`, `notifyOrderDelayed`
+- `getBakeList`, `getAdminSummary` (and/or equivalent endpoints for overview counts/slots)
+- Slot/capacity info from pickup window/order data as provided by API.
 
 ## Ordered tasks
 
-1. Orders query/filter/summary.
-2. Order list UI with badges/pagination.
-3. Order detail layout and copy/contact actions.
-4. Accept/reject flows with reason.
-5. Ready/completed flows.
-6. Payment toggle/method and correction confirmation.
-7. Delay and cancel flows.
-8. Error/refresh handling for 409.
-9. Bake list UI and date selection.
-10. Tests with MockWebServer and Compose UI.
-11. Seed fixtures for states.
+1. Overview snapshot cards, bake capacity list, and next-pickup CTA.
+2. Pickup orders list with date selector, filter chips/counts, and slot grouping/capacity.
+3. Order cards with badges and contextual actions (confirm payment, mark ready & notify, mark picked up).
+4. Order detail view and full admin action set with validations/confirmations.
+5. Bake list view.
+6. Polling/refresh and 409/error handling.
+7. Tests (unit state mapping, MockWebServer, Compose UI) and fixtures.
 
 ## Acceptance criteria
 
-- Given a bake date, then orders and summary counts load.
-- Given a pending order, then Accept and Reject are available.
-- Given reject with no reason, then submit is blocked.
-- Given accept after cutoff, then the server error is shown and state refreshes.
-- Given accepted, then Mark ready, Delay, Cancel, and payment controls are available.
-- Given ready, then Mark completed is available.
-- Given paid, then method and paid timestamp display.
-- Given payment correction, then a confirmation is required and status updates.
-- Given a terminal order, then no status actions are shown.
-- Given a network failure, then the last known data remains with an error banner.
-- Given a bake list, then quantities and option counts match active orders.
-- Given a pending order, then it is excluded from the bake list.
-- Given a cancelled/rejected/expired order, then it is excluded.
+- Given selected day, overview shows orders/items-to-bake/total and per-item ordered-vs-limit with available/sold-out messaging.
+- Given pickup orders screen, date/filters/slot groups and "X of Y slots booked" display correctly.
+- Given order in prep with unpaid, "Payment pending" and "Confirm Venmo payment" available; confirming updates payment state per server.
+- Given "Mark ready & notify", order becomes ready and notification flow triggered/reported per API; UI updates.
+- Given ready order, "Mark picked up" completes it.
+- Given bake list, counts match active bakeable orders.
+- Given 409/network errors, state refreshed and user informed.
 
 ## Test plan
 
-- Unit: action availability by status; money formatting.
-- MockWebServer: list/detail, accept/reject/ready/complete/cancel, payment, delay, bake list.
-- Compose UI: action dialogs, reason validation, confirmation.
-- 409 handling and refresh.
-- Accessibility: status labels, action grouping, large kitchen layout.
+- Unit: filter/status mapping, capacity math, money formatting.
+- MockWebServer: list/detail, payment, ready/complete/cancel/delay, bake list/summary.
+- Compose UI: chips/slots/cards/actions, confirmations, error states.
+- Accessibility: badges, action labels, readable kitchen/ops layout.
 
 ## Security checklist
 
-- [ ] Admin auth on all requests.
-- [ ] Payment/cash controls admin-only.
-- [ ] Destructive actions confirmed.
-- [ ] Customer PII only on detail screen.
-- [ ] No PII in logs.
-- [ ] Server is source of truth.
-- [ ] Clipboard actions explicit.
+- [ ] Admin auth on all requests/actions.
+- [ ] Payment methods/corrections admin-only and audited.
+- [ ] Destructive actions confirmed; no PII in logs.
+- [ ] Server authoritative state.
 
 ## Quality gate
 
@@ -159,10 +121,10 @@ Quality-gate results belong in the phase PR description.
 
 ## Definition of done
 
-Bethany can run a bake day from the app: review orders, accept/reject, mark paid, mark ready/completed, handle delays/cancellations, and read the bake list.
+Overview and pickup-orders flows match design and enable day-of operations: monitor capacity/sales, confirm payment, mark ready & notify, and mark picked up, with accurate bake list.
 
 ## Handoff notes
 
-- A7 adds notification queue/failure views and reminder controls.
-- A8 adds push deep links into order detail.
-- Refunds remain manual via Venmo.
+- A7 covers broader notification management/queue visibility; A6 wires in-flow "mark ready & notify" actions.
+- A8 adds push deep links to orders.
+- Ensure filter labels ("To prep"/"Ready") map explicitly to backend statuses in implementation/spec updates if enums differ.
