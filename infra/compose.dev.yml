@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${DB_NAME:-bethanysbakery}
+      POSTGRES_USER: ${DB_USER:-bakery}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-bakery}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-bakery} -d ${DB_NAME:-bethanysbakery}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ../server
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-bethanysbakery}
+      DB_USER: ${DB_USER:-bakery}
+      DB_PASSWORD: ${DB_PASSWORD:-bakery}
+      BAKERY_NAME: ${BAKERY_NAME:-Bethany's Bakery}
+      BAKERY_TIMEZONE: ${BAKERY_TIMEZONE:-America/Denver}
+      BAKERY_PICKUP_ADDRESS: ${BAKERY_PICKUP_ADDRESS:-Lehi, Utah}
+      BAKERY_MAPS_URL: ${BAKERY_MAPS_URL:-https://maps.google.com/?q=Lehi,Utah}
+      BAKERY_SUPPORT_EMAIL: ${BAKERY_SUPPORT_EMAIL:-support@example.com}
+      ORDER_CUTOFF_HOURS: ${ORDER_CUTOFF_HOURS:-12}
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:

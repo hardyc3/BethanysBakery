@@ -1,0 +1,27 @@
+<configuration>
+    <springProperty scope="context" name="appName" source="spring.application.name"/>
+
+    <appender name="CONSOLE_PLAIN" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %msg requestId=%X{requestId} method=%X{method} path=%X{path} status=%X{status} durationMs=%X{durationMs}%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+            <pattern>{"timestamp":"%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX}","level":"%level","logger":"%replace(%logger){'"','\"'}","message":"%replace(%replace(%replace(%msg){'\\','\\\\'}){'"','\"'}){'[\r\n\t]+',' '}","requestId":"%X{requestId}","method":"%X{method}","path":"%X{path}","status":"%X{status}","durationMs":"%X{durationMs}"}%n</pattern>
+        </encoder>
+    </appender>
+
+    <springProfile name="local | test">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_PLAIN"/>
+        </root>
+    </springProfile>
+
+    <springProfile name="staging | prod">
+        <root level="INFO">
+            <appender-ref ref="CONSOLE_JSON"/>
+        </root>
+    </springProfile>
+</configuration>

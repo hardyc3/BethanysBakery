@@ -182,3 +182,13 @@ All acceptance criteria pass, tests are green, OpenAPI references the implemente
 - S2 adds `V2__auth.sql`; do not edit `V1` after merge.
 - S6 adds real notification providers; S1 has none.
 - S7 productionizes Compose and Cloudflare; S1 only provides local compose.
+
+## Gap analysis and deferrals
+
+| Severity | Evidence | Action | Owner |
+|---|---|---|---|
+| Medium | `application.yml` / `compose.dev.yml` include local-default DB credentials (`bakery`/`bakery`) and compose fallbacks for convenience. S7 requires prod startup to reject weak/default secrets. | **Deferred.** Local-only defaults acceptable for S1; must be hardened/validated in prod profile. | S7 (`docs/specs/server/S7-hardening-deploy.md`) |
+| Low | `server/Dockerfile` installs system Gradle when `gradle-wrapper.jar` is absent, reducing build reproducibility. Wrapper jar is present in repo state but fallback remains. | **Deferred.** Prefer wrapper-only build and pin/check wrapper in CI-like checks if added later. | S7 / build hardening |
+| Low | JSON log appender uses pattern escaping, not a dedicated JSON encoder; highly unusual control chars could still produce malformed JSON. | **Mitigated in S1** with stronger escaping; consider logstash-logback encoder if structured logging needs grow. | S7 observability hardening (optional) |
+| Low | Rate limiting behavior (`RATE_LIMITED`/429, `Retry-After`) not implemented by S1 endpoints; error model mapping added. | **Deferred.** Actual limits implemented by S2/S5/S7 as specified. | S2, S5, S7 |
+| Low | `request completed` access-style log emitted by `RequestIdFilter`; MDC fields include status/duration for that event. No separate access-log framework configured. | **Recorded.** Meets S1 field requirement; revisit if centralized access logging added. | S7 |
