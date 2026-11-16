@@ -1,0 +1,10 @@
+spring:
+  jpa:
+    show-sql: false
+bakery:
+  name: Test Bakery
+  timezone: America/Denver
+  pickup-address: 123 Test St, Lehi, UT
+  maps-url: https://maps.google.com/?q=123+Test+St
+  support-email: test@example.com
+  order-cutoff-hours: 12

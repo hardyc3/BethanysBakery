@@ -1,0 +1,38 @@
+spring:
+  application:
+    name: bethanys-bakery-api
+  jackson:
+    time-zone: UTC
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:bethanysbakery}
+    username: ${DB_USER:bakery}
+    password: ${DB_PASSWORD:bakery}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:1}
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+bakery:
+  name: ${BAKERY_NAME:Bethany's Bakery}
+  timezone: ${BAKERY_TIMEZONE:America/Denver}
+  pickup-address: ${BAKERY_PICKUP_ADDRESS:Lehi, Utah}
+  maps-url: ${BAKERY_MAPS_URL:https://maps.google.com/?q=Lehi,Utah}
+  support-email: ${BAKERY_SUPPORT_EMAIL:support@example.com}
+  order-cutoff-hours: ${ORDER_CUTOFF_HOURS:12}

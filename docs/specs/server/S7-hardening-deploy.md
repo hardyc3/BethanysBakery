@@ -52,7 +52,7 @@ If an index duplicates one created earlier, leave it alone. Do not edit prior mi
 
 - Production profile rejects:
   - `ADMIN_MTLS_LOCAL_BYPASS=true`
-  - default/blank secrets
+  - default/blank secrets (including DB credentials still set to local/dev defaults such as `bakery`/`change-me`)
   - non-HTTPS public/admin URLs
   - `JWT_SECRET` shorter than 32 bytes
   - missing CA files
