@@ -26,6 +26,7 @@ Single admin account. Unique constraint on email.
 |---|---|---|
 | id | uuid | PK |
 | email | citext | unique, normalized |
+| name | varchar | display name (bootstrap CLI) |
 | password_hash | text | Argon2id |
 | totp_secret_encrypted | text | AES-GCM with app key |
 | totp_enabled | boolean | true after bootstrap |
@@ -89,9 +90,9 @@ At least one of email/phone is required. Login verifies the used channel. A cust
 | id | uuid | PK |
 | channel | varchar | EMAIL, SMS |
 | destination_hash | varchar(64) | normalized destination |
-| destination_encrypted | text | for delivery/audit |
+| destination_encrypted | text | normalized destination (LOGIN) or `customerId|destination` (CONTACT_VERIFY) |
 | code_hash | text | salted hash |
-| purpose | varchar | LOGIN |
+| purpose | varchar | LOGIN, CONTACT_VERIFY |
 | attempts | int | max 5 |
 | expires_at | timestamptz | 10 minutes |
 | consumed_at | timestamptz | |

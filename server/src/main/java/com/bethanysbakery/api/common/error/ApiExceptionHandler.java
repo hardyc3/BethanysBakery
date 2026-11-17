@@ -1,9 +1,11 @@
 package com.bethanysbakery.api.common.error;
 
+import com.bethanysbakery.api.auth.AuthException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -62,6 +64,17 @@ public class ApiExceptionHandler {
             "UNSUPPORTED_MEDIA_TYPE", request, null);
     }
 
+    @ExceptionHandler(AuthException.class)
+    ResponseEntity<Problem> handleAuth(AuthException ex, HttpServletRequest request) {
+        Problem body = problemBody(ex.status(), ex.status().getReasonPhrase(), ex.getMessage(), ex.code(), request, null);
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(ex.status())
+            .contentType(MediaType.APPLICATION_PROBLEM_JSON);
+        if (ex.retryAfterSeconds() != null) {
+            builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.retryAfterSeconds()));
+        }
+        return builder.body(body);
+    }
+
     @ExceptionHandler(ResponseStatusException.class)
     ResponseEntity<Problem> handleResponseStatus(ResponseStatusException ex, HttpServletRequest request) {
         HttpStatus status = HttpStatus.valueOf(ex.getStatusCode().value());
@@ -95,8 +108,14 @@ public class ApiExceptionHandler {
 
     private ResponseEntity<Problem> problem(HttpStatus status, String title, String detail, String code,
             HttpServletRequest request, List<Problem.FieldError> errors) {
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+            .body(problemBody(status, title, detail, code, request, errors));
+    }
+
+    private Problem problemBody(HttpStatus status, String title, String detail, String code,
+            HttpServletRequest request, List<Problem.FieldError> errors) {
         String requestId = MDC.get("requestId");
-        Problem body = new Problem(
+        return new Problem(
             "about:blank",
             title,
             status.value(),
@@ -106,6 +125,5 @@ public class ApiExceptionHandler {
             requestId,
             errors == null || errors.isEmpty() ? null : errors
         );
-        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON).body(body);
     }
 }

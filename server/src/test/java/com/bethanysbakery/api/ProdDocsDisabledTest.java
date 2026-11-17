@@ -35,6 +35,10 @@ class ProdDocsDisabledTest {
         r.add("bakery.maps-url", () -> "https://maps.example.com");
         r.add("bakery.support-email", () -> "a@b.com");
         r.add("bakery.order-cutoff-hours", () -> "12");
+        r.add("bakery.auth.jwt-secret", () -> "dGVzdC1qd3Qtc2VjcmV0LXRlc3Qtand0LXNlY3JldC10ZXN0");
+        r.add("bakery.auth.app-encryption-key", () -> "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=");
+        r.add("bakery.auth.admin-mtls-header", () -> "Cf-Authenticated-Client-Cert");
+        r.add("bakery.auth.admin-mtls-verified-header", () -> "Cf-Authenticated-Client-Cert-Verified");
     }
 
     @Autowired
