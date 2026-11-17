@@ -28,6 +28,11 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.8")
+    implementation("com.nimbusds:nimbus-jose-jwt:9.47")
+    implementation("dev.samstevens.totp:totp:1.7.1")
+    implementation("org.bouncycastle:bcpkix-jdk18on:1.80")
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.zxing:javase:3.5.3")
     runtimeOnly("org.postgresql:postgresql")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")

@@ -8,3 +8,18 @@ bakery:
   maps-url: https://maps.google.com/?q=123+Test+St
   support-email: test@example.com
   order-cutoff-hours: 12
+  auth:
+    jwt-secret: dGVzdC1qd3Qtc2VjcmV0LXRlc3Qtand0LXNlY3JldC10ZXN0
+    app-encryption-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+    admin-mtls-header: Cf-Authenticated-Client-Cert
+    admin-mtls-local-bypass: true
+    admin-access-ttl: PT15M
+    admin-refresh-ttl: P14D
+    customer-access-ttl: PT15M
+    customer-refresh-ttl: P30D
+    otp-ttl: PT10M
+    otp-max-attempts: 5
+    otp-resend-seconds: 60
+    otp-max-sends-per-15m: 3
+    admin-max-failed-logins: 5
+    admin-lockout: PT15M

@@ -51,6 +51,7 @@ Required constraints/indexes:
 - `OTP_TTL=PT10M`, `OTP_MAX_ATTEMPTS=5`, `OTP_RESEND_SECONDS=60`, `OTP_MAX_SENDS_PER_15M=3`.
 - `ADMIN_MAX_FAILED_LOGINS=5`, `ADMIN_LOCKOUT=PT15M`.
 - `APP_PUBLIC_BASE_URL`, `APP_ADMIN_API_URL`, `APP_PAIR_URL`.
+- `ADMIN_APP_LATEST_VERSION`, `ADMIN_APP_MIN_VERSION`, `ADMIN_APP_DOWNLOAD_URL`, `ADMIN_APP_RELEASE_NOTES` (drives `GET /admin/v1/app-info`).
 
 Cookie names:
 
@@ -94,6 +95,8 @@ Cookie names:
 - `GET /api/v1/auth/csrf` sets the cookie and returns the token.
 - Ignore CSRF for `GET`, `HEAD`, `OPTIONS`.
 - Reject missing/mismatched token with 403 `CSRF_INVALID`.
+- `POST /api/v1/auth/refresh` is exempt because its refresh cookie is scoped to `Path=/api/v1/auth`, marked `SameSite=Lax`, and the endpoint returns no CSRF-sensitive write. OTP request/verify are pre-session endpoints.
+- All other customer mutations (`PATCH /api/v1/me`, contact verification, logout) require the double-submit pair.
 
 ### Admin device pairing
 
@@ -190,6 +193,7 @@ Implement and match OpenAPI:
 - `listAdminDevices`
 - `revokeAdminDevice`
 - `listAuditEvents`
+- `getAdminAppInfo` (contract completeness; device-authenticated, no bearer required)
 
 ## Ordered tasks
 
@@ -259,6 +263,17 @@ This phase is not complete until `/phase-gate S2` runs and blocking findings are
 
 Quality-gate results belong in the phase PR description.
 
+## Quality gate results (2026-11-16)
+
+| Agent | Status | Findings | Action taken |
+|---|---|---|---|
+| spec-compliance | PASS | All 17 contract operations implemented; `getAdminAppInfo` was missing from the spec's operation list; `admin_user.name` and `otp_challenge.purpose=CONTACT_VERIFY` were missing from the domain model. | Added `getAdminAppInfo` + `ADMIN_APP_*` config and CSRF scope notes to this spec; updated `docs/domain-model.md`. |
+| lint | PASS (no dedicated linter configured) | `./gradlew check` runs only tests (no Checkstyle/Spotless/PMD). Secret scan found only committed local/test dev secrets. No TODO/FIXME or debug output. | Recorded the missing lint tooling as an S7/foundation follow-up below. |
+| refactor | PASS | Pairing route ran customer auth unnecessarily; X.500 CN accepted newlines; one fully-qualified `Optional`. | Filter now skips both auth paths for `/admin/v1/devices/pair`; CN restricted to a safe charset; import cleaned. |
+| test-quality | PASS | 53 tests, 0 failures (unit crypto/session/rate limit/cookies + OTP, refresh, CSRF, pairing, revocation, lockout, recovery, profile, audit integration). Added SMS normalization and audit redaction/list coverage. | All acceptance criteria have automated coverage. |
+| security | PASS | Security checklist met. Warnings: in-memory per-IP rate limiter is per-instance; dev compose relies on local-profile auth defaults. | Warnings recorded in handoff notes for S7. |
+| gap-analysis | PASS | Spec drift fixed (app-info, domain fields, CSRF scope). No new phase spec required. | Updates made to `docs/specs/server/S2-auth-devices.md`, `docs/domain-model.md`, `server/README.md`, `infra/.env.example`. |
+
 ## Definition of done
 
 All acceptance criteria pass, OpenAPI matches, migrations apply cleanly, local bootstrap/pairing CLIs documented, and A2/W2 can build against the auth contract.
@@ -269,3 +284,7 @@ All acceptance criteria pass, OpenAPI matches, migrations apply cleanly, local b
 - Cloudflare mTLS CA upload and header configuration are S7.
 - Notification preferences are S6; W7 depends on S6.
 - Admin app must pair before login.
+- The per-IP in-memory rate limiter is per-instance; S7 (or a shared cache) should make it cluster-wide before production scale.
+- `infra/compose.dev.yml` relies on the committed local-profile defaults for auth secrets and the local mTLS bypass; S7 must inject real `JWT_SECRET`/`APP_ENCRYPTION_KEY` from deployment secrets and disable the bypass in staging/prod.
+- Lint tooling (Checkstyle/Spotless/PMD) is not configured in the server build yet; `./gradlew check` currently runs only tests. Add a lint task in S7 hardening or a foundation follow-up.
+- `ADMIN_BOOTSTRAP_PASSWORD` and the bootstrap recovery codes are only printed once; the operator must store them outside the repo.
