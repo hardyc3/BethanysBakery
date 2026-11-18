@@ -129,14 +129,43 @@ Implementation dependencies (justify in the PR):
 
 ## Security checklist
 
-- [ ] Magic-byte validation and re-encoding.
-- [ ] No SVG or script-bearing formats.
-- [ ] Random storage paths; no user filename paths.
-- [ ] 10 MB limit enforced at server and proxy.
-- [ ] Image dimensions capped before decode where possible.
-- [ ] Media delete requires admin auth.
-- [ ] No EXIF/GPS leakage.
-- [ ] Audit upload/delete.
+- [x] Magic-byte validation and re-encoding.
+- [x] No SVG or script-bearing formats.
+- [x] Random storage paths; no user filename paths.
+- [ ] 10 MB limit enforced at server and proxy. Server side done (`MEDIA_MAX_UPLOAD_BYTES` + multipart cap); nginx/Cloudflare proxy cap deferred to S7.
+- [x] Image dimensions capped before decode where possible.
+- [x] Media delete requires admin auth.
+- [x] No EXIF/GPS leakage.
+- [x] Audit upload/delete.
+
+Deployment note: the runtime image uses glibc (`eclipse-temurin:21-jre`) because the WebP writer (`webp-imageio`) loads a bundled glibc JNI library; Alpine/musl cannot load it. Untrusted WebP input is decoded only with the pure-Java TwelveMonkeys reader, never the bundled native reader.
+
+Cache and privacy note: `GET /api/v1/media/{mediaId}` returns `Cache-Control: public, max-age=31536000, immutable` with an ETag derived from the normalized SHA-256. Deleting media makes the origin return 404, but already-cached copies can stay valid for up to one year. Cloudflare must purge `/api/v1/media/{mediaId}*` when a `MEDIA_DELETED` audit event is written so privacy takedowns are honored. S7 owns the purge procedure or the decision to shorten the TTL.
+
+Rate-limit ownership: S3 enforces only the per-upload 10 MB cap at the origin (`MEDIA_MAX_UPLOAD_BYTES`). Rate limiting for `POST /admin/v1/media` and `GET /api/v1/media/**` is owned by S7 at the Cloudflare edge.
+
+## Quality-gate findings and owners
+
+Triage of the S3 gate warnings. Severity is `High`, `Medium`, or `Low`. "Closed" means already fixed or already owned by a future spec; nothing is dropped.
+
+| # | Gap | Severity | Evidence | Action / owner |
+|---|-----|----------|----------|----------------|
+| 1 | No regression test for WebP codec selection (native reader risk) | Medium | `ImageProcessor.java:170-178,298-306` | FIXED: `ImageProcessorTest.selectsPureJavaWebpReaderAndSejdaWriter` asserts TwelveMonkeys reader + Sejda writer. |
+| 2 | Orphan media files on post-commit failure/crash; no reconciliation sweep | Medium | `MediaService.java:81-87,145-153` | ROUTED to S7 "Media hardening ownership": reconciliation sweep + runbook. |
+| 3 | No rate limit on media upload or public media GET | Medium | `MediaController.java:37-62`; `SecurityConfig.java:72` | ROUTED to S7 rate limits; ownership documented above. |
+| 4 | Unbounded nested `customizationGroups`/`options` collections | Medium | `CatalogApi.java:43,65`; `openapi.yaml:1863-1865,1900-1903` (no `maxItems`) | ROUTED to S7 (add `maxItems` + `@Size(max)` alongside the 1 MB JSON cap); S4 keeps offering snapshots consistent. |
+| 5 | Media-in-use check race under READ_COMMITTED (template create vs media delete) | Medium | `MediaService.java:129`; `ItemTemplateService.java:127`; `ItemTemplateRepository.java:13` | ROUTED to S7: enforce reference integrity under concurrency; S4 extends to offering photos. |
+| 6 | Immutable year-long cache delays privacy takedown | Medium | `MediaController.java:28-29` | Documented above; ROUTED to S7: purge on delete or shorten TTL. |
+| 7 | Broad public path matcher | Closed | `SecurityConfig.java:72` (GET-only matcher) | Already fixed in prior gate. |
+| 8 | `local` profile exposes mTLS-bypassing API on all interfaces | High if mis-deployed | `application-local.yml:24`; `SecurityConfig.java:79-81` | Already owned by S7 (`S7-hardening-deploy.md:53-54,278`): prod rejects local bypass. |
+| 9 | Original filename retained in DB (PII) | Low | `Media.java:26-27`; `V3__catalog.sql:6`; `MediaService.java:75,198-202` | ROUTED to S7: confirm retention need; keep sanitized, never returned or logged. |
+| 10 | Stale S1 deployment text | Closed | `S1-foundation.md:105` | Already fixed in prior gate. |
+| 11 | Mutable image dependency tags | Low | `build.gradle.kts` (version strings for the four image deps) | ROUTED to S7: digest/verification-metadata pinning and scan. |
+| 12 | 10 MB proxy upload cap | Medium (deferred) | `S3-catalog-media.md:135`; `S7-hardening-deploy.md:87-90,159` | Already owned by S7; server side done in S3. |
+| 13 | Lint tooling gaps (Spotless/Checkstyle/PMD, yamllint, hadolint, OpenAPI validator) | Low | Gate 2 result; no such config in repo | ROUTED to S7 "Developer tooling". |
+| 14 | No JaCoCo coverage tooling | Low | `build.gradle.kts` (no coverage plugin) | ROUTED to S7 "Developer tooling". |
+| 15 | Media URL built in two places | Low | former `MediaService.toMediaView` / `ItemTemplateService.toMediaView` | FIXED: extracted `MediaViews`; both services delegate to `MediaViews.of`. |
+| 16 | Untested nested IDs/boundaries; silent >60-char tag drop | Low-Medium | `CatalogIntegrationTest.java`; `ItemTemplateService.java:115-124,320-329` | FIXED: added tests for unknown/duplicate nested IDs, `available=false` round-trip, >60-char tag rejection, isolated decode-pixel bound; service now rejects over-length tags instead of dropping them. |
 
 ## Quality gate
 

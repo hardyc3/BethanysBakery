@@ -78,6 +78,8 @@ Sections:
 - Use selected `menuDateId`/`pickupWindowId` from W3.
 - 409/404/unavailable: explain and link back to menu.
 - Refetch on focus; disable add if unavailable.
+- `photoVariants` is a sparse map: the server only emits sizes generated for that image, so `400`/`800`/`1600` keys may be missing for small photos. Build `srcset` from the keys that are present (fall back to `photoUrl`); MSW fixtures must include a partial-variants case (carried over from S4's gate findings).
+- Customization group/option IDs are regenerated on every offering update (including snapshot-preserving updates). Do not persist/cached-ID assumptions for `customizationGroups[].id`/`options[].id` across an update; refetch before submitting `optionIds` with a cart/order (server validates against the current snapshot).
 
 ## Ordered tasks
 

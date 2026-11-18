@@ -8,6 +8,12 @@ bakery:
   maps-url: https://maps.google.com/?q=123+Test+St
   support-email: test@example.com
   order-cutoff-hours: 12
+  media:
+    root: ./build/test-media
+    max-upload-bytes: 10485760
+    max-edge-pixels: 1600
+    max-decode-pixels: 40000000
+    max-source-edge: 10000
   auth:
     jwt-secret: dGVzdC1qd3Qtc2VjcmV0LXRlc3Qtand0LXNlY3JldC10ZXN0
     app-encryption-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
@@ -23,3 +29,4 @@ bakery:
     otp-max-sends-per-15m: 3
     admin-max-failed-logins: 5
     admin-lockout: PT15M
+    app-public-base-url: https://public.example.com

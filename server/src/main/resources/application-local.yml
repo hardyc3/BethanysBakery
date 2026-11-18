@@ -16,6 +16,8 @@ logging:
     console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} - %msg requestId=%X{requestId}%n"
 
 bakery:
+  media:
+    root: ${MEDIA_ROOT:./media}
   auth:
     jwt-secret: bG9jYWwtand0LXNlY3JldC1sb2NhbC1qd3Qtc2VjcmV0LWxvY2Fs
     app-encryption-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=

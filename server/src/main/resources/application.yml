@@ -18,6 +18,10 @@ spring:
           time_zone: UTC
   flyway:
     enabled: true
+  servlet:
+    multipart:
+      max-file-size: ${MEDIA_MAX_UPLOAD_BYTES:10485760}
+      max-request-size: ${MEDIA_MAX_REQUEST_BYTES:11534336}
 
 management:
   endpoints:
@@ -36,6 +40,12 @@ bakery:
   maps-url: ${BAKERY_MAPS_URL:https://maps.google.com/?q=Lehi,Utah}
   support-email: ${BAKERY_SUPPORT_EMAIL:support@example.com}
   order-cutoff-hours: ${ORDER_CUTOFF_HOURS:12}
+  media:
+    root: ${MEDIA_ROOT:/data/media}
+    max-upload-bytes: ${MEDIA_MAX_UPLOAD_BYTES:10485760}
+    max-edge-pixels: ${MEDIA_MAX_EDGE_PIXELS:1600}
+    max-decode-pixels: ${MEDIA_MAX_DECODE_PIXELS:40000000}
+    max-source-edge: ${MEDIA_MAX_SOURCE_EDGE:10000}
   auth:
     jwt-secret: ${JWT_SECRET:}
     app-encryption-key: ${APP_ENCRYPTION_KEY:}

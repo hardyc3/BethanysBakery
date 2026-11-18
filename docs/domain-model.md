@@ -139,7 +139,7 @@ Indexes: destination hash + created_at, expires_at.
 | Field | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| storage_key | varchar | path under media volume |
+| storage_key | varchar | path under configured media root (`MEDIA_ROOT`) |
 | original_filename | varchar | |
 | content_type | varchar | image/jpeg, image/png, image/webp |
 | size_bytes | bigint | max 10 MB |

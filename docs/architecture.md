@@ -92,7 +92,7 @@ Constraints:
 - Jakarta Validation
 - Testcontainers, JUnit 5
 - Actuator health
-- Runtime image: `eclipse-temurin:21-jre-alpine`
+- Runtime image: `eclipse-temurin:21-jre` (glibc required by the `webp-imageio` WebP writer JNI library; the build stage stays Alpine)
 
 ### Customer web
 
@@ -273,6 +273,7 @@ Configuration groups:
 - `ADMIN_*`: admin alert email, app version info.
 - `CLOUDFLARE_*`: tunnel token, mTLS header name, country header.
 - `BACKUP_*`: restic repository, password.
+- `MEDIA_*`: media root, 10 MB upload cap, max decode/edge bounds. No secrets.
 
 ## 11. Security model
 

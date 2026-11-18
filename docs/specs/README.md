@@ -70,9 +70,10 @@ Use these stable `Problem.code` values. Do not invent a new code without updatin
 | `VALIDATION_ERROR` | 400 | Field or body validation failed; see `errors[]`. |
 | `NOT_FOUND` | 404 | Resource does not exist or is not visible to the caller. |
 | `METHOD_NOT_ALLOWED` | 405 | Unsupported HTTP method. |
-| `UNSUPPORTED_MEDIA_TYPE` | 415 | Unsupported upload or body content type. |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 or 400 | Unsupported body/declared content type (415); image magic-byte mismatch (400, per S3). |
 | `INTERNAL_ERROR` | 500 | Unexpected server failure; no internals leaked. |
 | `RATE_LIMITED` | 429 | Too many requests; honor `Retry-After`. |
+| `PAYLOAD_TOO_LARGE` | 413 | Upload exceeds the configured media size limit. |
 | `CSRF_INVALID` | 403 | Missing or mismatched CSRF token on a customer mutation. |
 | `OTP_INVALID` | 400 | Wrong OTP code. |
 | `OTP_EXPIRED` | 400 | OTP expired, used, or locked. |
@@ -85,6 +86,7 @@ Use these stable `Problem.code` values. Do not invent a new code without updatin
 | `OFFERING_NOT_AVAILABLE` | 409 | Offering is cancelled, off-menu, or not assigned to the window. |
 | `INVALID_CUSTOMIZATION` | 400 | Unknown, duplicate, unavailable, or invalid option selection. |
 | `PUBLISH_VALIDATION_FAILED` | 409 | Menu is missing dates, windows, offerings, or assignments. |
+| `INVALID_STATE` | 409 | Resource is in a state that forbids the requested action (e.g. editing a cancelled menu or deleting a published menu). |
 | `WINDOW_IN_USE` | 409 | Pickup window cannot be deleted because it is referenced. |
 | `MEDIA_IN_USE` | 409 | Media cannot be deleted because a template or offering references it. |
 | `COUNTRY_BLOCKED` | 403 | Request did not originate from an allowed country. |
