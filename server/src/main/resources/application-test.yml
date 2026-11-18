@@ -29,3 +29,4 @@ bakery:
     otp-max-sends-per-15m: 3
     admin-max-failed-logins: 5
     admin-lockout: PT15M
+    app-public-base-url: https://public.example.com

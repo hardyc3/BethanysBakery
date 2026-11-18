@@ -86,6 +86,7 @@ Use these stable `Problem.code` values. Do not invent a new code without updatin
 | `OFFERING_NOT_AVAILABLE` | 409 | Offering is cancelled, off-menu, or not assigned to the window. |
 | `INVALID_CUSTOMIZATION` | 400 | Unknown, duplicate, unavailable, or invalid option selection. |
 | `PUBLISH_VALIDATION_FAILED` | 409 | Menu is missing dates, windows, offerings, or assignments. |
+| `INVALID_STATE` | 409 | Resource is in a state that forbids the requested action (e.g. editing a cancelled menu or deleting a published menu). |
 | `WINDOW_IN_USE` | 409 | Pickup window cannot be deleted because it is referenced. |
 | `MEDIA_IN_USE` | 409 | Media cannot be deleted because a template or offering references it. |
 | `COUNTRY_BLOCKED` | 403 | Request did not originate from an allowed country. |

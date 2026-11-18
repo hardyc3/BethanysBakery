@@ -18,10 +18,8 @@ import com.bethanysbakery.api.domain.audit.ActorType;
 import com.bethanysbakery.api.domain.catalog.ItemTemplate;
 import com.bethanysbakery.api.domain.catalog.ItemTemplateRepository;
 import com.bethanysbakery.api.domain.catalog.MediaRepository;
-import com.bethanysbakery.api.domain.catalog.MediaStatus;
 import com.bethanysbakery.api.domain.catalog.SelectionType;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
@@ -40,6 +38,9 @@ class ItemTemplateServiceTest {
 
     @Mock
     private MediaRepository mediaRepository;
+
+    @Mock
+    private MediaReferenceService mediaReferences;
 
     @Mock
     private AuditService audit;
@@ -101,7 +102,7 @@ class ItemTemplateServiceTest {
         UUID photoId = UUID.randomUUID();
         CatalogApi.ItemTemplateWrite request = new CatalogApi.ItemTemplateWrite(
             "Test", null, photoId, null, List.of(), true, List.of());
-        when(mediaRepository.findByIdAndStatus(photoId, MediaStatus.ACTIVE)).thenReturn(Optional.empty());
+        when(mediaReferences.lockAndCheckActive(photoId)).thenReturn(false);
 
         RequestValidationException failure = rejection(request);
 

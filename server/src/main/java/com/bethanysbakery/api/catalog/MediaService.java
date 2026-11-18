@@ -7,7 +7,6 @@ import com.bethanysbakery.api.common.Uuids;
 import com.bethanysbakery.api.common.error.RequestValidationException;
 import com.bethanysbakery.api.config.MediaProperties;
 import com.bethanysbakery.api.domain.audit.ActorType;
-import com.bethanysbakery.api.domain.catalog.ItemTemplateRepository;
 import com.bethanysbakery.api.domain.catalog.Media;
 import com.bethanysbakery.api.domain.catalog.MediaRepository;
 import com.bethanysbakery.api.domain.catalog.MediaStatus;
@@ -36,16 +35,16 @@ public class MediaService {
     private static final List<Integer> SIZES = List.of(400, 800, 1600);
 
     private final MediaRepository mediaRepository;
-    private final ItemTemplateRepository templateRepository;
+    private final MediaReferenceService mediaReferences;
     private final ImageProcessor imageProcessor;
     private final MediaStorage storage;
     private final MediaProperties properties;
     private final AuditService audit;
 
-    public MediaService(MediaRepository mediaRepository, ItemTemplateRepository templateRepository,
+    public MediaService(MediaRepository mediaRepository, MediaReferenceService mediaReferences,
             ImageProcessor imageProcessor, MediaStorage storage, MediaProperties properties, AuditService audit) {
         this.mediaRepository = mediaRepository;
-        this.templateRepository = templateRepository;
+        this.mediaReferences = mediaReferences;
         this.imageProcessor = imageProcessor;
         this.storage = storage;
         this.properties = properties;
@@ -125,11 +124,7 @@ public class MediaService {
 
     @Transactional
     public void delete(UUID mediaId, UUID adminId) {
-        Media media = activeMedia(mediaId);
-        if (templateRepository.existsByPhotoMediaId(mediaId)) {
-            throw new AuthException(HttpStatus.CONFLICT, "MEDIA_IN_USE",
-                "Media cannot be deleted while a template references it");
-        }
+        Media media = mediaReferences.assertDeletable(mediaId);
         media.markDeleted();
         mediaRepository.save(media);
         audit.record(ActorType.ADMIN, adminId, "MEDIA_DELETED", "MEDIA", mediaId,

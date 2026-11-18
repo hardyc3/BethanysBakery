@@ -69,7 +69,8 @@ public class SecurityConfig {
             )
             .addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .authorizeHttpRequests(auth -> {
-                auth.requestMatchers(HttpMethod.GET, "/api/v1/media/**").permitAll();
+                auth.requestMatchers(HttpMethod.GET, "/api/v1/media/**", "/api/v1/menu-dates",
+                    "/api/v1/menu-dates/**", "/api/v1/offerings", "/api/v1/offerings/**").permitAll();
                 auth.requestMatchers("/api/v1/config", "/actuator/health/**", "/actuator/info", "/error",
                     "/api/v1/auth/csrf", "/api/v1/auth/otp/**", "/api/v1/auth/refresh",
                     "/admin/v1/devices/pair", "/admin/v1/auth/login", "/admin/v1/auth/refresh",

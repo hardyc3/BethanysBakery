@@ -50,6 +50,12 @@ public class ApiExceptionHandler {
             "VALIDATION_ERROR", request, ex.errors());
     }
 
+    @ExceptionHandler(PublishValidationException.class)
+    ResponseEntity<Problem> handlePublishValidation(PublishValidationException ex, HttpServletRequest request) {
+        return problem(HttpStatus.CONFLICT, "Publish validation failed", "Menu cannot be published",
+            "PUBLISH_VALIDATION_FAILED", request, ex.errors());
+    }
+
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     ResponseEntity<Problem> handleUploadTooLarge(MaxUploadSizeExceededException ex, HttpServletRequest request) {
         return problem(HttpStatus.PAYLOAD_TOO_LARGE, "Payload too large", "Upload exceeds the 10 MB limit",
@@ -108,7 +114,7 @@ public class ApiExceptionHandler {
         if (ex.retryAfterSeconds() != null) {
             builder.header(HttpHeaders.RETRY_AFTER, String.valueOf(ex.retryAfterSeconds()));
         }
-        return builder.body(body);
+        return noStoreForPublicReads(builder, request).body(body);
     }
 
     @ExceptionHandler(ResponseStatusException.class)
@@ -144,8 +150,20 @@ public class ApiExceptionHandler {
 
     private ResponseEntity<Problem> problem(HttpStatus status, String title, String detail, String code,
             HttpServletRequest request, List<Problem.FieldError> errors) {
-        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_PROBLEM_JSON)
+        ResponseEntity.BodyBuilder builder = ResponseEntity.status(status)
+            .contentType(MediaType.APPLICATION_PROBLEM_JSON);
+        return noStoreForPublicReads(builder, request)
             .body(problemBody(status, title, detail, code, request, errors));
+    }
+
+    /** Availability must never be cached by a shared cache, including error responses on public reads. */
+    private ResponseEntity.BodyBuilder noStoreForPublicReads(ResponseEntity.BodyBuilder builder,
+            HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        if (uri.startsWith("/api/v1/menu-dates") || uri.startsWith("/api/v1/offerings")) {
+            builder.header(HttpHeaders.CACHE_CONTROL, "private, no-store, max-age=0");
+        }
+        return builder;
     }
 
     private Problem problemBody(HttpStatus status, String title, String detail, String code,

@@ -40,7 +40,7 @@ public final class CatalogApi {
         @Size(max = 4000) String ingredientsText,
         @Size(max = 20) List<@NotBlank @Size(max = 60) String> allergenTags,
         @NotNull Boolean active,
-        @Valid List<@Valid CustomizationGroupWrite> customizationGroups
+        @Valid @Size(max = 20) List<@Valid CustomizationGroupWrite> customizationGroups
     ) {}
 
     public record CustomizationGroup(
@@ -62,7 +62,7 @@ public final class CatalogApi {
         @NotNull @Min(0) Integer minSelections,
         @NotNull @Min(1) Integer maxSelections,
         @Min(Integer.MIN_VALUE) @Max(Integer.MAX_VALUE) Integer sortOrder,
-        @Valid @Size(min = 1) List<@Valid CustomizationOptionWrite> options
+        @Valid @Size(min = 1, max = 50) List<@Valid CustomizationOptionWrite> options
     ) {}
 
     public record CustomizationOption(

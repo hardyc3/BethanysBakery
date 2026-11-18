@@ -35,11 +35,14 @@ public class ItemTemplateService {
 
     private final ItemTemplateRepository templates;
     private final MediaRepository mediaRepository;
+    private final MediaReferenceService mediaReferences;
     private final AuditService audit;
 
-    public ItemTemplateService(ItemTemplateRepository templates, MediaRepository mediaRepository, AuditService audit) {
+    public ItemTemplateService(ItemTemplateRepository templates, MediaRepository mediaRepository,
+            MediaReferenceService mediaReferences, AuditService audit) {
         this.templates = templates;
         this.mediaRepository = mediaRepository;
+        this.mediaReferences = mediaReferences;
         this.audit = audit;
     }
 
@@ -123,8 +126,7 @@ public class ItemTemplateService {
         List<String> allergens = deduplicate(request.allergenTags());
         if (allergens.size() > 20) errors.add(error("allergenTags", "must contain at most 20 tags"));
 
-        if (request.photoMediaId() != null && mediaRepository
-                .findByIdAndStatus(request.photoMediaId(), MediaStatus.ACTIVE).isEmpty()) {
+        if (request.photoMediaId() != null && !mediaReferences.lockAndCheckActive(request.photoMediaId())) {
             errors.add(error("photoMediaId", "must reference active media"));
         }
         if (request.active() == null) errors.add(error("active", "is required"));
@@ -139,6 +141,7 @@ public class ItemTemplateService {
     private List<ValidatedGroup> validateGroups(List<CatalogApi.CustomizationGroupWrite> source,
             List<Problem.FieldError> errors) {
         if (source == null) return List.of();
+        if (source.size() > 20) errors.add(error("customizationGroups", "must contain at most 20 groups"));
         List<ValidatedGroup> result = new ArrayList<>();
         Set<UUID> seenGroupIds = new HashSet<>();
         for (int i = 0; i < source.size(); i++) {
@@ -186,6 +189,7 @@ public class ItemTemplateService {
     private List<ValidatedOption> validateOptions(List<CatalogApi.CustomizationOptionWrite> source, String groupField,
             List<Problem.FieldError> errors) {
         if (source == null) return List.of();
+        if (source.size() > 50) errors.add(error(groupField + ".options", "must contain at most 50 options"));
         List<ValidatedOption> result = new ArrayList<>();
         Set<UUID> seenIds = new HashSet<>();
         Set<String> seenNames = new HashSet<>();
