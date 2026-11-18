@@ -74,6 +74,8 @@ If an index duplicates one created earlier, leave it alone. Do not edit prior mi
   - Cancel: 20 per customer/hour.
   - Pair: 10 per IP/15m.
   - Admin login: 10 per IP/15m plus account lockout.
+  - Media upload: 20 per admin/hour at origin plus a Cloudflare WAF rule on `POST /admin/v1/media`.
+  - Public media GET: 120 per IP/minute at origin on `GET /api/v1/media/**` (the edge cache absorbs normal traffic).
   - Return 429 `RATE_LIMITED` with `Retry-After`.
 - Headers:
   - `Strict-Transport-Security`
@@ -91,6 +93,17 @@ If an index duplicates one created earlier, leave it alone. Do not edit prior mi
 - Log redaction:
   - emails, phones, tokens, OTPs, TOTP secrets, API keys, authorization headers, cookies.
 - Dependency and image scans are manual checklist items.
+
+### Media hardening ownership
+
+S3 implemented the origin-side upload pipeline; these follow-ups were found during the S3 quality gate and are owned here.
+
+- Cache purge: `GET /api/v1/media/{mediaId}` is served with `Cache-Control: public, max-age=31536000, immutable`. On `MEDIA_DELETED`, purge `/api/v1/media/{mediaId}*` at Cloudflare (or set a shorter TTL that meets the takedown target). Document the chosen policy in `cloudflare-cache.md` and verify with a cached-then-deleted media probe.
+- Reconciliation sweep: add a startup/maintenance job or operator script that lists files under `MEDIA_ROOT` and removes any file not referenced by an `ACTIVE` `media.storage_key` or one of its generated `400/800/1600` variant keys. Post-commit crashes can leave orphan files because deletion runs in `afterCommit`. Add runbook `media-reconciliation.md`.
+- Reference integrity under concurrency: template creates (`item_template.photo_media_id`) and media deletes race under READ_COMMITTED. Enforce `MEDIA_IN_USE` atomically (pessimistic lock on the `media` row, serializable transaction, or a DB trigger that blocks `DELETED` while referenced) and add an integration test. S4 must reuse the same mechanism when offerings reference photos.
+- Nested collection caps: `customizationGroups` and per-group `options` are unbounded in the catalog DTOs and `openapi.yaml` (`ItemTemplateWrite`, `CustomizationGroupWrite`). Add `maxItems` to those OpenAPI schemas and matching `@Size(max = …)` to the S3 and S4 DTOs. Choose generous limits that cannot reject a legitimate catalog; these complement, not replace, the 1 MB JSON cap.
+- Original filename: `media.original_filename` is stored sanitized and is never returned by the API or written to logs. Confirm the retention need; if unused, plan a forward-only migration to drop the column. Until then, keep it out of responses and logs.
+- Dependency pinning: pin or verify the S3 image dependencies (`imageio-webp`, `webp-imageio`, `metadata-extractor`, `thumbnailator`) with Gradle verification metadata or digests, and include them in the dependency/image scan checklist.
 
 ### Admin recovery and key rotation
 
@@ -246,7 +259,9 @@ If an index duplicates one created earlier, leave it alone. Do not edit prior mi
 - `rollback.md`
 - `backup-restore.md`
 - `cloudflare-tunnel.md`
+- `cloudflare-cache.md`
 - `cloudflare-mtls-ca.md`
+- `media-reconciliation.md`
 - `device-pairing.md`
 - `device-revocation.md`
 - `certificate-pinning-rotation.md`
@@ -291,6 +306,16 @@ Each runbook: prerequisites, exact commands, verification, rollback, and who to 
 - Restore drill on staging.
 - Manual ZAP baseline and dependency/image scan.
 - Load smoke and oversell regression.
+
+## Developer tooling
+
+Gate findings from earlier phases; add these checks and document each command in the relevant README.
+
+- Java formatting/static analysis: add Spotless or Checkstyle (optionally PMD) with a `check` task wired into `./gradlew build`.
+- YAML: add `yamllint` config for `docs/api/openapi.yaml` and `infra/*.yml`.
+- Dockerfile: run `hadolint` on `server/Dockerfile` and on Dockerfiles added by later phases.
+- OpenAPI: validate `docs/api/openapi.yaml` with a spec validator (for example `swagger-cli validate` or `openapi-spec-validator`) so contract drift is caught automatically.
+- Coverage: add JaCoCo to `server/build.gradle.kts` with HTML/XML reports and a documented minimum coverage threshold for the critical catalog/media paths.
 
 ## Security checklist
 

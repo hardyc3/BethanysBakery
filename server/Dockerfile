@@ -9,9 +9,11 @@ COPY src src
 RUN if [ -f gradle/wrapper/gradle-wrapper.jar ]; then ./gradlew bootJar --no-daemon; \
     else apk add --no-cache gradle && gradle bootJar --no-daemon; fi
 
-FROM eclipse-temurin:21-jre-alpine
+# glibc runtime: webp-imageio's writer loads a bundled glibc JNI library (musl/Alpine cannot).
+FROM eclipse-temurin:21-jre
 WORKDIR /app
-RUN addgroup -S app && adduser -S app -G app
+RUN groupadd --system app && useradd --system --gid app --home-dir /app --no-create-home app \
+    && mkdir -p /data/media && chown app:app /data/media
 COPY --from=build /workspace/build/libs/*.jar app.jar
 USER app
 EXPOSE 8080

@@ -74,6 +74,7 @@ public abstract class IntegrationTestBase {
     void resetDatabase() {
         jdbc.execute("""
             TRUNCATE TABLE audit_event, refresh_token, otp_challenge, device_pairing,
+                customization_option, customization_group, item_template, media,
                 admin_device, admin_user, customer CASCADE
             """);
     }

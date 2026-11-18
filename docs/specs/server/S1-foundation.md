@@ -102,7 +102,7 @@ No business features beyond public config and health.
 - `infra/compose.dev.yml`:
   - `postgres:16-alpine` with named volume, healthcheck, port `5432` only on localhost.
   - `api` built from `server/Dockerfile`, depends on healthy postgres, port `8080`.
-- `server/Dockerfile`: multi-stage Gradle build, non-root runtime, JRE Alpine.
+- `server/Dockerfile`: multi-stage Gradle build (Alpine build stage), non-root glibc JRE runtime (`eclipse-temurin:21-jre`); glibc required by the S3 WebP writer JNI library.
 - `server/.dockerignore`.
 - `infra/.env.example` with every variable.
 - `infra/scripts/dev.sh` convenience wrapper.

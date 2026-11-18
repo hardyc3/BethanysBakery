@@ -19,11 +19,13 @@ docker compose -f compose.dev.yml up --build
 # or: ./scripts/dev.sh
 ```
 API: http://localhost:8080/api/v1/config
+Uploaded images persist in the compose volume `media-data` mounted at `/data/media`. Server and proxy must both enforce the 10 MB upload limit.
 
 ## Environment variables
 See `../infra/.env.example`.
 - Database: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_POOL_MAX`, `DB_POOL_MIN`
 - Bakery: `BAKERY_NAME`, `BAKERY_TIMEZONE`, `BAKERY_PICKUP_ADDRESS`, `BAKERY_MAPS_URL`, `BAKERY_SUPPORT_EMAIL`, `ORDER_CUTOFF_HOURS`
+- Media: `MEDIA_ROOT` (default `/data/media`), `MEDIA_MAX_UPLOAD_BYTES` (10485760 = 10 MB), `MEDIA_MAX_REQUEST_BYTES` (11534336 = 11 MB), `MEDIA_MAX_EDGE_PIXELS` (1600), `MEDIA_MAX_DECODE_PIXELS` (40000000), `MEDIA_MAX_SOURCE_EDGE` (10000)
 - Auth crypto: `JWT_SECRET`, `APP_ENCRYPTION_KEY` (base64, at least 32 bytes)
 - Device CA: `ADMIN_DEVICE_CA_CERT_PATH`, `ADMIN_DEVICE_CA_KEY_PATH`
 - mTLS: `ADMIN_MTLS_HEADER`, `ADMIN_MTLS_VERIFIED_HEADER`, `ADMIN_MTLS_LOCAL_BYPASS`
@@ -89,7 +91,8 @@ cd server
 - `auth.device` — device CA, pairing, mTLS/device-key authentication
 - `auth.customer` / `auth.admin` — customer and admin auth/profile services
 - `auth.audit` — append-only audit writes and queries
-- `domain.auth` / `domain.audit` — entities and repositories
+- `domain.auth` / `domain.audit` / `domain.catalog` — entities and repositories
 - `api.auth` — S2 controllers and DTOs
+- `api.catalog` / `catalog` — S3 template/media controllers, DTOs, image pipeline and storage
 - `cli` — `bootstrap-admin` and `pair-device` commands
 - `api.publicapi` — public endpoints (`GET /api/v1/config`)

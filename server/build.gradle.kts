@@ -33,6 +33,12 @@ dependencies {
     implementation("org.bouncycastle:bcpkix-jdk18on:1.80")
     implementation("com.google.zxing:core:3.5.3")
     implementation("com.google.zxing:javase:3.5.3")
+    // S3 media pipeline: TwelveMonkeys reads WebP, Sejda writes WebP,
+    // metadata-extractor reads EXIF orientation, Thumbnailator resizes.
+    implementation("com.twelvemonkeys.imageio:imageio-webp:3.12.0")
+    implementation("org.sejda.imageio:webp-imageio:0.1.6")
+    implementation("com.drewnoakes:metadata-extractor:2.19.0")
+    implementation("net.coobird:thumbnailator:0.4.20")
     runtimeOnly("org.postgresql:postgresql")
 
     testImplementation("org.springframework.boot:spring-boot-starter-test")

@@ -13,6 +13,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -68,6 +69,7 @@ public class SecurityConfig {
             )
             .addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .authorizeHttpRequests(auth -> {
+                auth.requestMatchers(HttpMethod.GET, "/api/v1/media/**").permitAll();
                 auth.requestMatchers("/api/v1/config", "/actuator/health/**", "/actuator/info", "/error",
                     "/api/v1/auth/csrf", "/api/v1/auth/otp/**", "/api/v1/auth/refresh",
                     "/admin/v1/devices/pair", "/admin/v1/auth/login", "/admin/v1/auth/refresh",

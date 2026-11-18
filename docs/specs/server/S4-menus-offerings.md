@@ -113,11 +113,11 @@ Created from an active item template. Snapshot at creation:
   - `customizationGroups` `null` keeps the current snapshot; an array replaces it.
 - Price per item in cents, `0..99999`.
 - `quantityLimit` is total for the bake date, `1..9999`.
-- Offerings may reference media; extend the S3 `MEDIA_IN_USE` delete check to offering photos.
+- Offerings may reference media; extend the S3 `MEDIA_IN_USE` delete check to offering photos. Use the concurrency-safe reference check defined by S7 ("Media hardening ownership"); the S3 READ_COMMITTED check alone is racy.
 - `maxPerCustomer` is optional; null means no per-customer cap. When present it must be `>= 1` and `<= quantityLimit`.
 - `windowIds` must be non-empty and belong to the same bake date.
 - Offering must be assigned to at least one window before publish.
-- Customization validation is the same as templates.
+- Customization validation is the same as templates, including the nested `customizationGroups`/`options` count caps added by S7.
 - Offering update:
   - price, quantity limit, max per customer, window assignment, snapshot text/photo, customization snapshot.
   - Reducing `quantityLimit` below `reservedCount` is allowed.
@@ -248,3 +248,4 @@ All acceptance criteria pass, OpenAPI matches, migrations apply, and A3/A5/W3 ca
 - S5 implements order cancellation propagation for menu/date cancellation, and enforces no active order lines on offering cancel.
 - S6 sends the menu notification and reminder using `notifyAt` and `reminderSentAt`.
 - Availability is read-only here; S5 owns reservation counters.
+- S7 owns the media cache-purge-on-delete policy. Offering `photoUrl`/`photoVariants` use the immutable S3 media URLs, so a deleted photo can remain cached until Cloudflare purges it.

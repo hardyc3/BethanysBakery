@@ -16,6 +16,10 @@ import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
+import org.springframework.web.multipart.support.MissingServletRequestPartException;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
@@ -40,10 +44,42 @@ public class ApiExceptionHandler {
             "VALIDATION_ERROR", request, errors);
     }
 
+    @ExceptionHandler(RequestValidationException.class)
+    ResponseEntity<Problem> handleRequestValidation(RequestValidationException ex, HttpServletRequest request) {
+        return problem(HttpStatus.BAD_REQUEST, "Validation failed", "Request validation failed",
+            "VALIDATION_ERROR", request, ex.errors());
+    }
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    ResponseEntity<Problem> handleUploadTooLarge(MaxUploadSizeExceededException ex, HttpServletRequest request) {
+        return problem(HttpStatus.PAYLOAD_TOO_LARGE, "Payload too large", "Upload exceeds the 10 MB limit",
+            "PAYLOAD_TOO_LARGE", request, null);
+    }
+
+    @ExceptionHandler(MultipartException.class)
+    ResponseEntity<Problem> handleMalformedMultipart(MultipartException ex, HttpServletRequest request) {
+        return problem(HttpStatus.BAD_REQUEST, "Bad request", "Malformed multipart request",
+            "VALIDATION_ERROR", request, null);
+    }
+
+    @ExceptionHandler(MissingServletRequestPartException.class)
+    ResponseEntity<Problem> handleMissingPart(MissingServletRequestPartException ex, HttpServletRequest request) {
+        return problem(HttpStatus.BAD_REQUEST, "Validation failed", "Request validation failed",
+            "VALIDATION_ERROR", request,
+            List.of(new Problem.FieldError(ex.getRequestPartName(), "is required")));
+    }
+
     @ExceptionHandler(HttpMessageNotReadableException.class)
     ResponseEntity<Problem> handleUnreadable(HttpMessageNotReadableException ex, HttpServletRequest request) {
         return problem(HttpStatus.BAD_REQUEST, "Bad request", "Malformed request body",
             "VALIDATION_ERROR", request, null);
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    ResponseEntity<Problem> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+        return problem(HttpStatus.BAD_REQUEST, "Validation failed", "Request validation failed",
+            "VALIDATION_ERROR", request,
+            List.of(new Problem.FieldError(ex.getName(), "has an invalid value")));
     }
 
     @ExceptionHandler({NoResourceFoundException.class})

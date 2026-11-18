@@ -70,9 +70,10 @@ Use these stable `Problem.code` values. Do not invent a new code without updatin
 | `VALIDATION_ERROR` | 400 | Field or body validation failed; see `errors[]`. |
 | `NOT_FOUND` | 404 | Resource does not exist or is not visible to the caller. |
 | `METHOD_NOT_ALLOWED` | 405 | Unsupported HTTP method. |
-| `UNSUPPORTED_MEDIA_TYPE` | 415 | Unsupported upload or body content type. |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 or 400 | Unsupported body/declared content type (415); image magic-byte mismatch (400, per S3). |
 | `INTERNAL_ERROR` | 500 | Unexpected server failure; no internals leaked. |
 | `RATE_LIMITED` | 429 | Too many requests; honor `Retry-After`. |
+| `PAYLOAD_TOO_LARGE` | 413 | Upload exceeds the configured media size limit. |
 | `CSRF_INVALID` | 403 | Missing or mismatched CSRF token on a customer mutation. |
 | `OTP_INVALID` | 400 | Wrong OTP code. |
 | `OTP_EXPIRED` | 400 | OTP expired, used, or locked. |
