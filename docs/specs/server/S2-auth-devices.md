@@ -74,7 +74,7 @@ Cookie names:
 - OTP sender interface:
   - `OtpSender.send(channel, destination, code, expiresAt)`.
   - `local` profile: log code to console only.
-  - `staging`/`prod`: use the S6 provider implementation. Until S6, return `503 NOT_CONFIGURED` in those profiles.
+  - `staging`/`prod`: use the S6 `ProviderOtpSender`, backed by the S6 Mailgun/Textbee providers. Missing credentials still return `503 NOT_CONFIGURED`.
 - Do not reveal whether an account exists.
 
 ### Sessions

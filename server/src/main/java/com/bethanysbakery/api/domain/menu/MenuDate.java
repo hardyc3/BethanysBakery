@@ -84,6 +84,11 @@ public class MenuDate {
         this.updatedAt = now;
     }
 
+    public void markReminderSent(Instant now) {
+        this.reminderSentAt = now;
+        this.updatedAt = now;
+    }
+
     public void cancel(String reason, Instant now) {
         this.status = MenuDateStatus.CANCELLED;
         this.cancelledAt = now;

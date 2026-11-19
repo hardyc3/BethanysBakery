@@ -1,9 +1,12 @@
 package com.bethanysbakery.api.api.auth;
 
+import com.bethanysbakery.api.api.notification.NotificationApi;
+import com.bethanysbakery.api.auth.AuthException;
 import com.bethanysbakery.api.auth.admin.AdminPrincipal;
 import com.bethanysbakery.api.auth.device.AdminDeviceService;
 import com.bethanysbakery.api.auth.device.DevicePairingService;
 import com.bethanysbakery.api.common.web.ClientIps;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -14,6 +17,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -48,7 +52,7 @@ public class AdminDeviceController {
             device.getLastSeenAt(),
             device.getRevokedAt(),
             device.getAppVersion(),
-            false
+            device.getFcmToken() != null
         )).toList();
     }
 
@@ -56,5 +60,17 @@ public class AdminDeviceController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void revoke(@PathVariable UUID deviceId, @AuthenticationPrincipal AdminPrincipal principal) {
         deviceService.revoke(deviceId, principal.adminId());
+    }
+
+    @PutMapping("/{deviceId}/push-token")
+    @Operation(operationId = "updateAdminPushToken")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void pushToken(@PathVariable UUID deviceId,
+            @Valid @RequestBody NotificationApi.PushTokenRequest request,
+            @AuthenticationPrincipal AdminPrincipal principal) {
+        if (!deviceId.equals(principal.deviceId())) {
+            throw new AuthException(HttpStatus.FORBIDDEN, "FORBIDDEN", "Token must be registered by its device");
+        }
+        deviceService.updatePushToken(deviceId, request.token(), principal.adminId());
     }
 }

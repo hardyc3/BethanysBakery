@@ -12,6 +12,8 @@ public interface MenuDateRepository extends JpaRepository<MenuDate, UUID> {
 
     List<MenuDate> findAllByMenu_IdOrderByBakeDateAsc(UUID menuId);
 
+    List<MenuDate> findAllByStatus(MenuDateStatus status);
+
     @Query("""
         select d from MenuDate d join d.menu m
         where m.status = com.bethanysbakery.api.domain.menu.MenuStatus.PUBLISHED

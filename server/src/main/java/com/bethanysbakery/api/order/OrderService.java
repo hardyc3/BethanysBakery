@@ -587,6 +587,8 @@ public class OrderService {
         Instant now = clock.instant();
         List<Order> active = orders.findAllByMenuDate_IdAndStatusIn(menuDateId, ACTIVE);
         for (Order order : active) {
+            // Publish before the status update so S6 can still derive active-order recipients.
+            publisher.menuDateCancelled(date, detail);
             int updated = jdbc.update("""
                 UPDATE orders SET status = 'CANCELLED', cancelled_by = 'SYSTEM',
                     cancellation_reason = ?, updated_at = ?
@@ -598,7 +600,6 @@ public class OrderService {
             inventory.release(order.getId());
             audit.record(ActorType.SYSTEM, null, "ORDER_CANCELLED_BY_ADMIN", "ORDER", order.getId(),
                 Map.of("status", order.getStatus().name()), Map.of("status", "CANCELLED", "reason", detail));
-            publisher.menuDateCancelled(date, detail);
         }
     }
 

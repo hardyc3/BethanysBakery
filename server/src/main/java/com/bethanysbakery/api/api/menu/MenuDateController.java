@@ -2,6 +2,8 @@ package com.bethanysbakery.api.api.menu;
 
 import com.bethanysbakery.api.auth.admin.AdminPrincipal;
 import com.bethanysbakery.api.menu.MenuService;
+import com.bethanysbakery.api.notification.MenuNotificationService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.http.HttpStatus;
@@ -21,9 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class MenuDateController {
 
     private final MenuService service;
+    private final MenuNotificationService notifications;
 
-    public MenuDateController(MenuService service) {
+    public MenuDateController(MenuService service, MenuNotificationService notifications) {
         this.service = service;
+        this.notifications = notifications;
     }
 
     @PostMapping("/admin/v1/menus/{menuId}/dates")
@@ -55,5 +59,12 @@ public class MenuDateController {
             @Valid @RequestBody(required = false) MenuApi.CancelRequest request,
             @AuthenticationPrincipal AdminPrincipal principal) {
         return service.cancelDate(menuDateId, request == null ? null : request.reason(), principal.adminId());
+    }
+
+    @PostMapping("/admin/v1/menu-dates/{menuDateId}/remind")
+    @Operation(operationId = "sendMenuDateReminder")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void remind(@PathVariable UUID menuDateId, @AuthenticationPrincipal AdminPrincipal principal) {
+        notifications.sendReminderNow(menuDateId, principal.adminId());
     }
 }

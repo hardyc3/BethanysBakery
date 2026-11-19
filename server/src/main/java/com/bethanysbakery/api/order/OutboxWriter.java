@@ -28,7 +28,8 @@ public class OutboxWriter {
             "order:" + orderId + ":created", now);
     }
 
-    private void write(String aggregateType, UUID aggregateId, String eventType,
+    /** Idempotent write for S6 events; the unique idempotency key makes repeated calls safe. */
+    public void write(String aggregateType, UUID aggregateId, String eventType,
             Map<String, Object> payload, String idempotencyKey, Instant now) {
         String json;
         try {

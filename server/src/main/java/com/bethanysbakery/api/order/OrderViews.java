@@ -48,7 +48,7 @@ public class OrderViews {
             order.getExpiresAt(),
             order.getCreatedAt(),
             order.getUpdatedAt(),
-            paymentInstructions(order.getTotalCents(), order.getOrderNumber())
+            paymentInstructions(order)
         );
     }
 
@@ -61,9 +61,13 @@ public class OrderViews {
             line.getUnitPriceCents(), line.getQuantity(), line.getLineTotalCents(), options, line.getNotes());
     }
 
-    private OrderApi.PaymentInstructions paymentInstructions(int amountCents, String orderNumber) {
+    private OrderApi.PaymentInstructions paymentInstructions(Order order) {
         BakeryProperties.Venmo venmo = properties.venmo();
-        return new OrderApi.PaymentInstructions(venmo.handle(), venmo.displayName(), amountCents,
-            orderNumber, null);
+        String base = properties.auth().appPublicBaseUrl();
+        String deepLink = base == null || base.isBlank() ? null
+            : (base.endsWith("/") ? base.substring(0, base.length() - 1) : base)
+                + "/orders/" + order.getId() + "/pay";
+        return new OrderApi.PaymentInstructions(venmo.handle(), venmo.displayName(), order.getTotalCents(),
+            order.getOrderNumber(), deepLink);
     }
 }

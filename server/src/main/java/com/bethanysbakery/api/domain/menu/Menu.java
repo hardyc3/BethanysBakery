@@ -99,6 +99,11 @@ public class Menu {
         this.updatedAt = now;
     }
 
+    public void markNotifySent(Instant now) {
+        this.notifySentAt = now;
+        this.updatedAt = now;
+    }
+
     public void cancel(String reason, Instant now) {
         this.status = MenuStatus.CANCELLED;
         this.cancelledAt = now;

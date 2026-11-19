@@ -1,14 +1,20 @@
 package com.bethanysbakery.api.api.order;
 
+import com.bethanysbakery.api.api.notification.NotificationApi;
 import com.bethanysbakery.api.auth.admin.AdminPrincipal;
 import com.bethanysbakery.api.domain.order.OrderStatus;
 import com.bethanysbakery.api.domain.order.PaymentStatus;
+import com.bethanysbakery.api.notification.PaymentService;
 import com.bethanysbakery.api.order.OrderService;
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,9 +27,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AdminOrderController {
 
     private final OrderService service;
+    private final PaymentService payments;
 
-    public AdminOrderController(OrderService service) {
+    public AdminOrderController(OrderService service, PaymentService payments) {
         this.service = service;
+        this.payments = payments;
     }
 
     @GetMapping
@@ -67,5 +75,22 @@ public class AdminOrderController {
             @Valid @RequestBody OrderApi.ReasonRequest request,
             @AuthenticationPrincipal AdminPrincipal principal) {
         return service.cancelByAdmin(orderId, request.reason(), principal.adminId());
+    }
+
+    @PutMapping("/{orderId}/payment")
+    @Operation(operationId = "updateOrderPayment")
+    public OrderApi.Order payment(@PathVariable UUID orderId,
+            @Valid @RequestBody NotificationApi.PaymentUpdateRequest request,
+            @AuthenticationPrincipal AdminPrincipal principal) {
+        return payments.updatePayment(orderId, request.paid(), request.method(), principal.adminId());
+    }
+
+    @PostMapping("/{orderId}/delay")
+    @Operation(operationId = "notifyOrderDelayed")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public void delay(@PathVariable UUID orderId,
+            @RequestBody(required = false) NotificationApi.DelayOrderRequest request,
+            @AuthenticationPrincipal AdminPrincipal principal) {
+        payments.notifyDelayed(orderId, request == null ? null : request.reason(), principal.adminId());
     }
 }

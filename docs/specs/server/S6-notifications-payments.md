@@ -16,6 +16,15 @@ Implement manual payment tracking, Venmo instructions, email/SMS/push delivery, 
 - FCM client setup (A8). This phase issues pushes and stores tokens.
 - Cloudflare/mTLS deployment (S7).
 
+## Explicit deferrals
+
+These items were raised during the S6 quality gate and are recorded here instead of being fixed in S6:
+
+- Build-wide static-analysis and secret-scanning tooling: no Checkstyle/Spotless/PMD/ErrorProne or `gitleaks`/`trufflehog` runner is configured in the server build. S6 gate used `git diff --check`, Gradle `clean check`, ad-hoc `-Xlint:all`, and grep scans. Tooling is a repo-wide concern, not an S6 deliverable.
+- Test-profile provider-configuration check: `NotificationService.verifyProvidersConfigured` deliberately skips credential checks under the `test` profile because integration tests inject fake providers. `local`/`staging`/`prod` still return 503 when credentials are missing.
+- Hardcoded `Bethany's Bakery` display name in rendered message copy (notification templates and `ProviderOtpSender` OTP subject/body): matches the current single-brand product; `BakeryProperties.name` is not threaded into templates or OTP copy. Multi-brand templating is outside S6.
+- Provider base URLs are operator-controlled and not restricted to HTTPS by S6; `S7-hardening-deploy.md` owns the startup check. The `LocalOtpSender` profile breadth (OTP logged outside `staging`/`prod`) is likewise a pre-existing hardening item routed to S7.
+
 ## Data model — `V6__notifications.sql`
 
 Create exactly as described in `docs/domain-model.md`:
@@ -47,6 +56,7 @@ Rules:
 
 - Allowed for `PENDING`, `ACCEPTED`, `READY`, `COMPLETED`.
 - `paid=true` sets `payment_status=PAID`, `paid_at=now`, and `payment_method`. A null method defaults to `VENMO`; cash at pickup uses `CASH`.
+- `method` must match the enum exactly (case-sensitive); other spellings return 400 `VALIDATION_ERROR`.
 - `paid=false` sets `UNPAID`, clears `paid_at`/method. This is a correction and must be audited.
 - No customer-facing cash option.
 - Audit `ORDER_PAID` / `ORDER_PAYMENT_CORRECTED`.
@@ -76,10 +86,10 @@ S5 already added `bakery.venmo.handle` / `bakery.venmo.display-name` (env `VENMO
 - A scheduler polls `outbox_event` where `status='PENDING'` and `available_at <= now`.
 - Processing idempotent via `idempotency_key`.
 - A second scheduler dispatches due `notification_delivery` rows.
-- Failures set `FAILED`, increment attempts, set `available_at` with exponential backoff:
+- Failures record an operator-visible `lastError`, increment attempts, and schedule the next try with exponential backoff:
   - 1 minute, 5 minutes, 15 minutes, 1 hour, 6 hours.
-  - After 5 attempts, leave `FAILED`.
-- Admin can retry a failed notification.
+  - The notification stays `QUEUED` with `scheduled_at` between tries; after the sixth failure (all five backoff waits used), leave `FAILED`.
+- Admin can retry a failed notification; this re-arms it with `attempts=0` and requeues immediately.
 
 ### Events
 
@@ -98,6 +108,8 @@ S5 already added `bakery.venmo.handle` / `bakery.venmo.display-name` (env `VENMO
 | Admin new order | admin | immediately |
 | Admin push fallback | admin email | when no active FCM token or push fails for new order |
 
+Active-order `MENU_CANCELLED` recipients are transactional notices: they bypass per-event notification preferences but still obey SMS consent/opt-out and channel availability. S5 must publish the handoff event before changing order status so active recipients are still derivable.
+
 Idempotency keys:
 
 - `MENU_PUBLISHED:<menuId>`
@@ -109,7 +121,7 @@ Idempotency keys:
 
 These keys are unique per logical message and channel fallback; retries reuse the same key.
 
-S5→S6 event handoff: `OrderEventPublisher.menuDateCancelled(MenuDate, reason)` carries no per-order or per-customer identity, and S5 publishes it once per affected order when a date is cancelled. S6 handlers must query the affected active orders to derive recipients, dedupe by `MENU_CANCELLED:<menuDateId>:<customerId>`, and tolerate repeated invocations of the same event.
+S5→S6 event handoff: `OrderEventPublisher.menuDateCancelled(MenuDate, reason)` carries no per-order or per-customer identity, and S5 publishes it once per affected order when a date is cancelled. S6 handlers must query the affected active orders to derive recipients, dedupe by `MENU_CANCELLED:<menuDateId>:<customerId>`, and tolerate repeated invocations of the same event. S5 currently emits no whole-menu cancellation event, so the `MENU_CANCELLED:<menuId>:<customerId>` key is reserved for a future handoff; S6 only consumes date cancellations today.
 
 ### Preferences
 
@@ -120,6 +132,7 @@ Customer:
 - `GET` includes `smsOptedOut` so the UI can show STOP state separately from consent.
 - Enabling SMS requires `smsConsent=true`; server records `sms_consent_at`.
 - An explicit `PUT` with `smsConsent=true` is a new consent and clears `sms_opt_out_at`.
+- An explicit `PUT` with `smsConsent=false` revokes `sms_consent_at`; clients must send `true` when they want consent retained. START/UNSTOP cannot clear an opt-out without prior consent.
 - SMS is suppressed if no consent or `sms_opt_out_at` is set.
 - `PUT` validates event types and booleans.
 
@@ -178,12 +191,19 @@ Implementations:
   - OAuth2 service account token.
   - Send to active device tokens.
   - Remove/disable token on `UNREGISTERED`/`INVALID_ARGUMENT`.
+- OTP:
+  - `ProviderOtpSender` (`staging`/`prod`) sends OTP codes through the same Mailgun/Textbee providers as order notifications.
+  - `local`/`test` keep the local logging sender; S7 injects real provider secrets.
+  - Provider failure returns `503 OTP_DELIVERY_FAILED`; missing credentials return `503 NOT_CONFIGURED`.
 - Local:
   - `local` profile logs rendered messages and OTP codes to console.
   - No network calls.
 - Missing configuration:
   - Outside `local`, if a required provider credential is absent, admin-triggered send/retry operations return 503 `NOT_CONFIGURED`.
-  - Background delivery is marked `FAILED` with an operator-visible reason; orders continue to work.
+  - `ADMIN_ALERT_EMAIL` is a precondition for a `PAID` transition: an unset value returns 503 `NOT_CONFIGURED` before the order status changes, so the mandatory paper-trail email is never silently skipped. This is configuration failure, not delivery failure; it does not apply once delivery has been queued.
+  - Background delivery failures record an operator-visible reason; the notification is `QUEUED` during backoff and terminal `FAILED` after the final attempt. Orders continue to work.
+
+Error codes introduced by S6 (see `docs/specs/README.md`): `INVALID_SIGNATURE` (401), `SMS_CONSENT_REQUIRED` (400), `NOT_CONFIGURED` (503), `OTP_DELIVERY_FAILED` (503), `ORDER_NOT_PAYABLE` (409), `ORDER_NOT_ACTIVE` (409), `NOT_RETRYABLE` (409), `VALIDATION_ERROR` (400).
 
 ### Templates
 
@@ -277,22 +297,23 @@ Implementations:
 - Integration: order event → notification rows → provider call (WireMock).
 - Integration: menu publish scheduler with fixed clock.
 - Integration: reminder scheduler audience selection.
-- Integration: STOP/START webhook signature and consent.
+- Integration: STOP/START webhook signature and consent, including suppression of already-queued SMS (per-customer and fan-out menu notifications).
+- Unit: provider-backed OTP sender routes email/SMS and fails closed on provider errors.
 - Integration: FCM invalid token removal and new-order email fallback.
 - Integration: admin retry for failed `ORDER_PAID` email.
 - Security: no PII/secret leakage in logs; HTML escaping for email templates; admin email payload contains only necessary order/fulfillment data.
 
 ## Security checklist
 
-- [ ] Provider API keys only in env.
-- [ ] Webhook HMAC verified on raw body.
-- [ ] SMS consent enforced server-side.
-- [ ] STOP honored immediately.
-- [ ] Email HTML escaped.
-- [ ] Masked destinations in admin API/logs.
-- [ ] Retry endpoints admin-only.
-- [ ] Audit consent/payment changes.
-- [ ] Rate limits on notification-triggering customer actions (S2/S5).
+- [x] Provider API keys only in env.
+- [x] Webhook HMAC verified on raw body.
+- [x] SMS consent enforced server-side.
+- [x] STOP honored immediately (receive + dispatch-time recheck).
+- [x] Email HTML escaped.
+- [x] Masked destinations in admin API/logs.
+- [x] Retry endpoints admin-only.
+- [x] Audit consent/payment changes.
+- [x] Rate limits on notification-triggering customer actions (S2/S5).
 
 ## Quality gate
 
@@ -307,6 +328,21 @@ This phase is not complete until `/phase-gate S6` runs and blocking findings are
 
 Quality-gate results belong in the phase PR description.
 
+### Results (branch `phase5`, 2026-11-19)
+
+All blocking findings were fixed; no blockers remain. Deferrals are recorded above and routed to S7/A8/W7 where owned by a later phase.
+
+| Agent | Status | Findings | Action taken |
+|---|---|---|---|
+| `spec-compliance` | PASS | 5 verification passes: operation IDs/request fields, DTO validation, malformed webhook ack, scheduler gating, audit actors, masked logs, invalid status query; then STOP at dispatch, real staging/prod OTP sender, error-code mapping, active-order date-cancellation recipients. | Fixed each blocker with tests; added explicit deferrals and spec handoff notes; final full `clean check` green. |
+| `lint` | PASS | No whitespace, secret, TODO, or debug-output violations. `-Xlint:all` shows 6 pre-existing `[serial]` warnings outside S6 scope; no Checkstyle/Spotless/PMD/gitleaks runner in repo. | `git diff --check HEAD`, `clean check`, ad-hoc `-Xlint:all`, YAML/SQL/secret greps all clean. Tooling gap routed to S7 Developer tooling. |
+| `refactor` | PASS | Long `dispatch()`, duplicated rule/HTTP helpers, dead key helper, FQN noise, repeated active-order status list, duplicated test CSRF/login blocks. | Added `NotificationRules` and `ProviderHttp`, removed dead `orderCreated()` helper and `title()` delegate, imported FQNs, removed dead imports, hoisted active-order statuses, deduped test helpers. Left `boolean[]` preference tuple and further `dispatch()` splitting as non-blocking. |
+| `test-quality` | PASS | No coverage tooling; admin push success, payment-method edges, mixed-device fallback, and outbox/STOP-fan-out branches were unasserted. | Added admin push success, payment-method/default/invalid/non-payable, mixed-device fallback, and fan-out STOP tests. Coverage/JaCoCo gap already routed to S7. |
+| `security` | PASS | Fan-out `MENU_PUBLISHED` SMS skipped the dispatch-time STOP recheck; reflected input in error message; fallback email queued when any push failed instead of none. | Resolve fan-out customer by delivery destination and recheck consent; generic error message; fallback only when no push succeeded. HTTPS provider URLs and `LocalOtpSender` profile breadth routed to S7. |
+| `gap-analysis` | PASS | FCM pushes lacked A8's `data` message; five problem codes undocumented; `ADMIN_ALERT_EMAIL` precondition and `smsConsent=false` semantics unclear; bakery-name deferral too narrow. | Added `data` payload for `ADMIN_NEW_ORDER`; registered codes in README/OpenAPI/S6 spec; clarified S6/W7 semantics; broadened deferral; routed S7 hardening items. |
+| `code-review` (Standards) | PASS | No hard violations; judgement-call smells only (boolean tuple, repeated enqueue skeleton, masking/URL/money duplication, unused DTO fields/repos, config coupling). | No churn: repeated helpers and tuple left as non-blocking refactors; scheduler config coupling and DTO fields are spec-driven. |
+| `code-review` (Spec) | PASS | Unconfigured FCM skipped the admin fallback email; push body included customer-entered line notes; payment `method` accepted non-enum spellings; backoff/admin-retry wording ambiguous; tautological fallback-email assertions. | Fallback now also enqueued on `PROVIDER_NOT_CONFIGURED`; push uses note-free item summary; method validation is exact-case; spec clarifies backoff/retry semantics; fallback assertions now query `idempotency_key`. |
+
 ## Definition of done
 
 All acceptance criteria pass, local profile logs all messages, provider integrations are testable with fakes, and W6/W7/A7/A8 can build against the contract.
@@ -314,6 +350,6 @@ All acceptance criteria pass, local profile logs all messages, provider integrat
 ## Handoff notes
 
 - S7 configures real provider secrets and Cloudflare.
-- A8 registers FCM tokens and handles push payloads.
+- A8 registers FCM tokens and handles push payloads. `ADMIN_NEW_ORDER` pushes include a data message `{type:NEW_ORDER, orderId, menuDateId, orderNumber}` alongside the notification title/body, matching `A8-push-release.md`.
 - Notifications are at-least-once with idempotency; UI should tolerate duplicate delivery.
 - Email/SMS delivery failure does not roll back orders or payments.

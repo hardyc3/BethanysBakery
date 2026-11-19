@@ -1379,6 +1379,13 @@ components:
             - PUBLISH_VALIDATION_FAILED
             - INVALID_STATE
             - WINDOW_IN_USE
+            - SMS_CONSENT_REQUIRED
+            - NOT_CONFIGURED
+            - INVALID_SIGNATURE
+            - ORDER_NOT_PAYABLE
+            - ORDER_NOT_ACTIVE
+            - NOT_RETRYABLE
+            - OTP_DELIVERY_FAILED
         requestId: { type: string }
         errors:
           type: array

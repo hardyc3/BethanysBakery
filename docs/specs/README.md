@@ -93,6 +93,11 @@ Use these stable `Problem.code` values. Do not invent a new code without updatin
 | `MEDIA_IN_USE` | 409 | Media cannot be deleted because a template or offering references it. |
 | `COUNTRY_BLOCKED` | 403 | Request did not originate from an allowed country. |
 | `NOT_CONFIGURED` | 503 | A provider or feature is not enabled in this environment. |
+| `INVALID_SIGNATURE` | 401 | Webhook HMAC signature mismatch. |
+| `ORDER_NOT_PAYABLE` | 409 | Order status forbids a payment update. |
+| `ORDER_NOT_ACTIVE` | 409 | Order is not active for the requested admin action. |
+| `NOT_RETRYABLE` | 409 | Notification is not in a retryable state. |
+| `OTP_DELIVERY_FAILED` | 503 | OTP provider rejected the message. |
 
 ## 3. Required spec sections
 

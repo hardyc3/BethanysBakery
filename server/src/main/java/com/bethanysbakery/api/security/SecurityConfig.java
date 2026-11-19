@@ -69,6 +69,8 @@ public class SecurityConfig {
             )
             .addFilterBefore(authenticationFilter, UsernamePasswordAuthenticationFilter.class)
             .authorizeHttpRequests(auth -> {
+                // Signature-verified in the controller; no customer cookie or CSRF required.
+                auth.requestMatchers(HttpMethod.POST, "/api/v1/webhooks/textbee").permitAll();
                 auth.requestMatchers(HttpMethod.GET, "/api/v1/media/**", "/api/v1/menu-dates",
                     "/api/v1/menu-dates/**", "/api/v1/offerings", "/api/v1/offerings/**").permitAll();
                 auth.requestMatchers("/api/v1/config", "/actuator/health/**", "/actuator/info", "/error",

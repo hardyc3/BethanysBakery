@@ -51,6 +51,7 @@ Single admin account. Unique constraint on email.
 | status | varchar | ACTIVE, REVOKED |
 | paired_at, last_seen_at, revoked_at | timestamptz | |
 | fcm_token | text | added in S6 |
+| fcm_updated_at | timestamptz | added in S6 |
 | app_version | varchar | last seen |
 | created_at, updated_at | timestamptz | |
 
@@ -600,12 +601,15 @@ Template edits never change published offerings. Offering edits never change exi
 
 Idempotency keys:
 
-- Menu publish: `menu:{menuId}:published`
-- Reminder: `menu-date:{menuDateId}:reminder:{customerId}`
-- Order event: `order:{orderId}:{eventType}`
+- `OrderCreated`: `order:{orderId}:created` (S5)
+- Menu publish: `MENU_PUBLISHED:{menuId}`
+- Reminder: `ORDER_REMINDER:{menuDateId}:{customerId}`
+- Order events: `<ORDER_EVENT>:<orderId>` (for example `ORDER_READY:<orderId>`)
 - Admin paid order: `order:{orderId}:paid`
-- Admin new order: `order:{orderId}:admin-new`
-- Expiry: `order:{orderId}:expired`
+- Menu/date cancellation: `MENU_CANCELLED:<menuId|menuDateId>:<customerId>`
+- Admin new order: `ADMIN_NEW_ORDER:<orderId>`; fallback `ADMIN_NEW_ORDER_EMAIL:<orderId>`
+
+Authoritative list: `docs/specs/server/S6-notifications-payments.md`.
 
 ## 9. Authorization matrix
 

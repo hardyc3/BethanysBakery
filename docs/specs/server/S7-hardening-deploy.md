@@ -56,7 +56,8 @@ If an index duplicates one created earlier, leave it alone. Do not edit prior mi
   - non-HTTPS public/admin URLs
   - `JWT_SECRET` shorter than 32 bytes
   - missing CA files
-  - local OTP logging enabled
+  - local OTP logging enabled; the logging `LocalOtpSender` may be active only under `local`/`test`
+  - non-HTTPS provider base URLs (`MAILGUN_API_BASE`, `TEXTBEE_BASE_URL`) outside `local`
   - OpenAPI UI enabled
 - Country check for customer API:
   - If `CLOUDFLARE_PROXY=true`, require `CF-IPCountry`.
@@ -329,6 +330,7 @@ Gate findings from earlier phases; add these checks and document each command in
 - Dockerfile: run `hadolint` on `server/Dockerfile` and on Dockerfiles added by later phases.
 - OpenAPI: validate `docs/api/openapi.yaml` with a spec validator (for example `swagger-cli validate` or `openapi-spec-validator`) so contract drift is caught automatically. Assert `operationId` presence and uniqueness; the S5 "operation IDs not emitted" warning concerns generated clients, not the document (the document already defines 73, including all S5 operations).
 - Coverage: add JaCoCo to `server/build.gradle.kts` with HTML/XML reports and a documented minimum coverage threshold for the critical catalog/media paths.
+- Secrets: add a `gitleaks`/`trufflehog` runner to CI and document the command; S6 gate used grep scans only.
 
 ## Security checklist
 

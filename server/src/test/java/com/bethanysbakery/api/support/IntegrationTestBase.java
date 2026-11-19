@@ -74,6 +74,7 @@ public abstract class IntegrationTestBase {
     void resetDatabase() {
         jdbc.execute("""
             TRUNCATE TABLE audit_event, refresh_token, otp_challenge, device_pairing,
+                notification_delivery, notification, notification_preference,
                 outbox_event, order_line_option, order_line, daily_order_sequence, orders,
                 offering_option, offering_option_group, offering_window, offering, pickup_window,
                 menu_date, menu,

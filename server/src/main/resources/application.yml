@@ -75,3 +75,23 @@ bakery:
   venmo:
     handle: ${VENMO_HANDLE:bethanysbakery}
     display-name: ${VENMO_DISPLAY_NAME:Bethany's Bakery}
+  notifications:
+    scheduling-enabled: ${NOTIFICATION_SCHEDULING_ENABLED:true}
+    outbox-interval-ms: ${NOTIFICATION_OUTBOX_INTERVAL_MS:15000}
+    dispatch-interval-ms: ${NOTIFICATION_DISPATCH_INTERVAL_MS:30000}
+    menu-interval-ms: ${NOTIFICATION_MENU_INTERVAL_MS:60000}
+    order-expiry-interval-ms: ${ORDER_EXPIRY_INTERVAL_MS:60000}
+    admin-alert-email: ${ADMIN_ALERT_EMAIL:}
+    mailgun:
+      api-key: ${MAILGUN_API_KEY:}
+      domain: ${MAILGUN_DOMAIN:}
+      api-base: ${MAILGUN_API_BASE:https://api.mailgun.net/v3}
+      from: ${MAILGUN_FROM:}
+    textbee:
+      base-url: ${TEXTBEE_BASE_URL:}
+      api-key: ${TEXTBEE_API_KEY:}
+      device-id: ${TEXTBEE_DEVICE_ID:}
+      webhook-secret: ${TEXTBEE_WEBHOOK_SECRET:}
+    fcm:
+      project-id: ${FCM_PROJECT_ID:}
+      service-account-json: ${FCM_SERVICE_ACCOUNT_JSON:}
