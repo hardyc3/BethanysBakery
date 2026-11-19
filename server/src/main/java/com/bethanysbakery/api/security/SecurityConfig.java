@@ -75,7 +75,8 @@ public class SecurityConfig {
                     "/api/v1/auth/csrf", "/api/v1/auth/otp/**", "/api/v1/auth/refresh",
                     "/admin/v1/devices/pair", "/admin/v1/auth/login", "/admin/v1/auth/refresh",
                     "/admin/v1/app-info").permitAll();
-                auth.requestMatchers("/api/v1/me", "/api/v1/me/**", "/api/v1/auth/logout").hasRole("CUSTOMER");
+                auth.requestMatchers("/api/v1/me", "/api/v1/me/**", "/api/v1/orders",
+                    "/api/v1/orders/**", "/api/v1/auth/logout").hasRole("CUSTOMER");
                 auth.requestMatchers("/admin/v1/**").hasRole("ADMIN");
                 if (local) {
                     auth.requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll();

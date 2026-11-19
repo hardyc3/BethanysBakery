@@ -23,9 +23,8 @@ Create exactly as described in `docs/domain-model.md`:
 - `notification_preference`
 - `notification`
 - `notification_delivery`
-- `outbox_event`
 
-`V5` already creates all order payment/delay columns. `V6` only adds:
+`V5` (S5) already creates all order payment/delay columns **and the `outbox_event` table**, including `uq_outbox_idempotency` and `idx_outbox_status_available`. `V6` **must not** `CREATE TABLE outbox_event` or recreate its index — doing so fails the migration with "relation outbox_event already exists" (and "relation idx_outbox_status_available already exists"). `V6` reuses the V5 table. `V6` only adds:
 
 - `admin_device.fcm_token`
 - `admin_device.fcm_updated_at`
@@ -36,7 +35,7 @@ Constraints/indexes:
 - Unique `notification.idempotency_key`.
 - `notification(status, scheduled_at)` index.
 - `notification_delivery(notification_id)` index.
-- `outbox_event(status, available_at)` index.
+- `outbox_event(status, available_at)` index — already created in `V5` as `idx_outbox_status_available`; reuse, do not recreate.
 
 ## Payments
 
@@ -64,6 +63,8 @@ Venmo instructions are built from config:
 - `orders.total_cents`
 - `orders.order_number`
 
+S5 already added `bakery.venmo.handle` / `bakery.venmo.display-name` (env `VENMO_HANDLE` / `VENMO_DISPLAY_NAME`, with defaults) to `BakeryProperties` and `application.yml`, and builds `PaymentInstructions` from them. Reuse those properties; S6 adds only `APP_PUBLIC_BASE_URL` for absolute links/deep links and must not define duplicate Venmo config keys.
+
 `PaymentInstructions` includes `venmoHandle`, `venmoDisplayName`, amount, note (`BB-...`), and optional `venmoDeepLink`.
 
 ## Notification architecture
@@ -71,7 +72,7 @@ Venmo instructions are built from config:
 ### Outbox
 
 - Transactional outbox required for business events: write `outbox_event` (and notification rows when feasible) in the same transaction as the business change. `outbox_event` is the durable source of truth.
-- S5 writes `OrderCreated` outbox row in the order transaction. S6 handlers/processors consume it.
+- S5 writes `OrderCreated` outbox row in the order transaction (key `order:{orderId}:created`, `available_at=now`, `status=PENDING`). S6 handlers/processors consume it. The table arrives in `V5`, not `V6` (see Data model); reuse it as-is.
 - A scheduler polls `outbox_event` where `status='PENDING'` and `available_at <= now`.
 - Processing idempotent via `idempotency_key`.
 - A second scheduler dispatches due `notification_delivery` rows.
@@ -107,6 +108,8 @@ Idempotency keys:
 - `ADMIN_NEW_ORDER:<orderId>` for push and `ADMIN_NEW_ORDER_EMAIL:<orderId>` for the fallback email
 
 These keys are unique per logical message and channel fallback; retries reuse the same key.
+
+S5→S6 event handoff: `OrderEventPublisher.menuDateCancelled(MenuDate, reason)` carries no per-order or per-customer identity, and S5 publishes it once per affected order when a date is cancelled. S6 handlers must query the affected active orders to derive recipients, dedupe by `MENU_CANCELLED:<menuDateId>:<customerId>`, and tolerate repeated invocations of the same event.
 
 ### Preferences
 
@@ -148,7 +151,7 @@ Customer:
   - Set `reminder_sent_at` after queueing.
 - `notificationDispatchScheduler`: every 30–60 seconds.
 - `outboxScheduler`: every 10–30 seconds.
-- All schedulers use `Clock` injection and are disabled in tests unless explicitly started.
+- All schedulers use `Clock` injection and are disabled in tests unless explicitly started. S5's `OrderExpiryJob` is currently enabled globally via `@EnableScheduling` on the application class and is not profile-gated; extend the same property/profile gating to it so scheduled tasks do not fire during Testcontainers teardown (non-failing connection-refused log noise today).
 
 ### Providers
 

@@ -72,3 +72,6 @@ bakery:
     min-version: ${ADMIN_APP_MIN_VERSION:1.0.0}
     download-url: ${ADMIN_APP_DOWNLOAD_URL:https://example.com/admin-app.apk}
     release-notes: ${ADMIN_APP_RELEASE_NOTES:}
+  venmo:
+    handle: ${VENMO_HANDLE:bethanysbakery}
+    display-name: ${VENMO_DISPLAY_NAME:Bethany's Bakery}

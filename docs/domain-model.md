@@ -468,9 +468,10 @@ One channel attempt.
 | available_at | timestamptz | |
 | processed_at | timestamptz | |
 | last_error | text | |
+| idempotency_key | varchar | nullable; logical-message dedupe key, unique when present |
 | created_at | timestamptz | |
 
-Scheduler polls due `PENDING` rows.
+Scheduler polls due `PENDING` rows. Created in `V5__orders.sql` (S5) so the order transaction can enqueue `OrderCreated`; S6 reuses it and must not re-create it.
 
 ## 3. Relationships
 
@@ -638,6 +639,7 @@ Idempotency keys:
 - `notification(status, scheduled_at)`
 - `notification_delivery(notification_id)`
 - `outbox_event(status, available_at)`
+- `outbox_event(idempotency_key)` partial unique where not null (V5)
 - `otp_challenge(destination_hash, created_at)`
 - `refresh_token(token_hash)` unique
 - `admin_device(cert_fingerprint_sha256)` unique

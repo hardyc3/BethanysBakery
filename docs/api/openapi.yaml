@@ -1367,6 +1367,11 @@ components:
             - WINDOW_FULL
             - CUTOFF_PASSED
             - CANCELLATION_CLOSED
+            - OFFERING_NOT_AVAILABLE
+            - MENU_NOT_AVAILABLE
+            - WINDOW_NOT_AVAILABLE
+            - CUSTOMER_LIMIT_EXCEEDED
+            - INVALID_CUSTOMIZATION
             - RATE_LIMITED
             - UNSUPPORTED_MEDIA_TYPE
             - PAYLOAD_TOO_LARGE

@@ -1,7 +1,7 @@
 # Spec-Driven Development Workflow
 
 Status: active  
-Last updated: 2026-11-15
+Last updated: 2026-11-18
 
 ## 1. Purpose
 
@@ -84,6 +84,8 @@ Use these stable `Problem.code` values. Do not invent a new code without updatin
 | `CANCELLATION_CLOSED` | 409 | Customer cancellation window has closed. |
 | `CUSTOMER_LIMIT_EXCEEDED` | 409 | Per-customer limit for that offering/date exceeded. |
 | `OFFERING_NOT_AVAILABLE` | 409 | Offering is cancelled, off-menu, or not assigned to the window. |
+| `MENU_NOT_AVAILABLE` | 409 | Menu date or parent menu is not published (S5 order creation). |
+| `WINDOW_NOT_AVAILABLE` | 409 | Pickup window is inactive or does not belong to the requested date (S5 order creation). |
 | `INVALID_CUSTOMIZATION` | 400 | Unknown, duplicate, unavailable, or invalid option selection. |
 | `PUBLISH_VALIDATION_FAILED` | 409 | Menu is missing dates, windows, offerings, or assignments. |
 | `INVALID_STATE` | 409 | Resource is in a state that forbids the requested action (e.g. editing a cancelled menu or deleting a published menu). |

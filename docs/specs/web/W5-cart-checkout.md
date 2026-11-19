@@ -75,6 +75,7 @@ Review basket, choose/confirm pickup time, collect required customer details, ex
 6. Handle responses:
    - `201`: clear cart, navigate to order confirmation/received screen (W6).
    - `409 SOLD_OUT` / `409 WINDOW_FULL` / `409 CUTOFF_PASSED` / `409 CUSTOMER_LIMIT_EXCEEDED` / `400 INVALID_CUSTOMIZATION`: show actionable errors, keep cart, allow fix.
+   - `409 OFFERING_NOT_AVAILABLE` / `409 MENU_NOT_AVAILABLE` / `409 WINDOW_NOT_AVAILABLE`: these mean the menu/window/offering changed since the basket was built (or the requested IDs were stale). Re-fetch availability, show the blocking change dialog from step 4, and never silently drop or reduce a line. Treat missing IDs surfaced as 404 `NOT_FOUND` the same way.
    - `401`: refresh once then login with return-to.
    - `429`: show retry wait.
    - network/5xx: keep cart, retry with same idempotency key when appropriate; never assume success.
@@ -111,7 +112,7 @@ Review basket, choose/confirm pickup time, collect required customer details, ex
 
 - Unit: totals, slot-to-window mapping, idempotency key reuse, validation.
 - Component: basket edits, slot states, details prefill/validation, error dialogs.
-- MSW: 201 and all 4xx/409/429/5xx cases.
+- MSW: 201 and all 4xx/409/429/5xx cases, including `OFFERING_NOT_AVAILABLE`, `MENU_NOT_AVAILABLE`, `WINDOW_NOT_AVAILABLE`, and 404 `NOT_FOUND` availability races.
 - Playwright: menu → basket → pickup time → details → place order.
 - Accessibility: form labels, chip selection, dialog focus, error announcements.
 

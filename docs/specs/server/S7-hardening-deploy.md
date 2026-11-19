@@ -72,6 +72,7 @@ If an index duplicates one created earlier, leave it alone. Do not edit prior mi
   - OTP verify: 5 attempts per challenge, 20 per IP/hour.
   - Order create: 10 per customer/hour, 30 per IP/hour.
   - Cancel: 20 per customer/hour.
+  - S5 ships an in-memory `RateLimiter` (`ConcurrentHashMap`) at 20/minute per customer for both order create and cancel. It is single-instance only and does not match the production targets above. Replace it with the production limiter, reconcile the numbers, and document the single-instance assumption (multi-instance scaling remains a non-goal).
   - Pair: 10 per IP/15m.
   - Admin login: 10 per IP/15m plus account lockout.
   - Media upload: 20 per admin/hour at origin plus a Cloudflare WAF rule on `POST /admin/v1/media`.
@@ -92,6 +93,9 @@ If an index duplicates one created earlier, leave it alone. Do not edit prior mi
   - Reject oversized bodies with 413.
 - Log redaction:
   - emails, phones, tokens, OTPs, TOTP secrets, API keys, authorization headers, cookies.
+  - S5's `ApiExceptionHandler.handleUnexpected` logs the full exception (stack trace) on 500. Stack traces can echo request data into logs; gate by profile or sanitize before production.
+  - S5's `AuditService` redaction regex matches key names (password/token/secret/otp/code/apikey/authorization/credential) but not free-text `reason`/`notes` values written by order cancel/reject/expiry. Define and enforce a redaction policy for free-text audit fields.
+- Audit action naming: S5's menu/date cancellation audits as `ORDER_CANCELLED_BY_ADMIN` with `ActorType.SYSTEM`. Decide whether a distinct `ORDER_CANCELLED_BY_SYSTEM` audit action is warranted; if added, update the audit-action list in the affected specs and any audit consumers (audit actions are not `Problem.code` values and do not belong in the README error-code table). Until then the reuse is accepted and documented in the S5 handoff notes.
 - Dependency and image scans are manual checklist items.
 
 ### Media hardening ownership
@@ -246,6 +250,15 @@ S3 implemented the origin-side upload pipeline; these follow-ups were found duri
   8. Verify notifications logged and order status.
   9. Cancel/expiry paths.
 - Load smoke: 50 concurrent order attempts against 10 units; no oversell.
+- S5 order test-coverage follow-ups (non-blocking; carried here because S5 is complete):
+  - 50-concurrent performance smoke — covered by the load smoke above; confirm it is actually executed here.
+  - Expiry with injected fixed `Clock` (S5 test mutates `expires_at` with `Instant.now()` instead).
+  - Whole-menu cancellation propagation (S5 tests date cancellation only; `MenuService.cancel` loops active dates and calls the hook per date).
+  - Concurrent same-key idempotency replay (S5 test is sequential).
+  - Duplicate-line merge rules (same offering + sorted option set + identical notes).
+  - Additional validation paths: blank customer name, unverified contact, merged quantity > 99, notes length caps.
+  - Bake-list exclusion of `REJECTED` and `EXPIRED` explicitly, not just pending/cancelled.
+  - Outbox row `available_at = now` and exact key `order:{orderId}:created`.
 - Manual security checks:
   - OWASP ZAP baseline against staging.
   - `docker scout`/Trivy image scan (choose available tool).
@@ -311,10 +324,10 @@ Each runbook: prerequisites, exact commands, verification, rollback, and who to 
 
 Gate findings from earlier phases; add these checks and document each command in the relevant README.
 
-- Java formatting/static analysis: add Spotless or Checkstyle (optionally PMD) with a `check` task wired into `./gradlew build`.
+- Java formatting/static analysis: add Spotless or Checkstyle (optionally PMD) with a `check` task wired into `./gradlew build`. The S5 lint gate had no formatter, static analyzer, or `.editorconfig` to run; add a root `.editorconfig` (UTF-8, LF, final newline, 4-space Java / 2-space YAML) as the editor-level baseline alongside the Gradle `check` task.
 - YAML: add `yamllint` config for `docs/api/openapi.yaml` and `infra/*.yml`.
 - Dockerfile: run `hadolint` on `server/Dockerfile` and on Dockerfiles added by later phases.
-- OpenAPI: validate `docs/api/openapi.yaml` with a spec validator (for example `swagger-cli validate` or `openapi-spec-validator`) so contract drift is caught automatically.
+- OpenAPI: validate `docs/api/openapi.yaml` with a spec validator (for example `swagger-cli validate` or `openapi-spec-validator`) so contract drift is caught automatically. Assert `operationId` presence and uniqueness; the S5 "operation IDs not emitted" warning concerns generated clients, not the document (the document already defines 73, including all S5 operations).
 - Coverage: add JaCoCo to `server/build.gradle.kts` with HTML/XML reports and a documented minimum coverage threshold for the critical catalog/media paths.
 
 ## Security checklist
