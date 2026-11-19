@@ -58,7 +58,7 @@ public class AdminDeviceService {
                 .orElseThrow(() -> AuthException.unauthorized("Unknown device"));
         } else {
             String verified = request.getHeader(config.adminMtlsVerifiedHeader());
-            if (!"true".equalsIgnoreCase(verified)) {
+            if (!("true".equalsIgnoreCase(verified) || "success".equalsIgnoreCase(verified))) {
                 throw AuthException.unauthorized("Client certificate not verified");
             }
             String certificatePem = request.getHeader(config.adminMtlsHeader());

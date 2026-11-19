@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import com.bethanysbakery.api.config.ProductionConfigValidator;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -42,6 +44,9 @@ class ProdDocsDisabledTest {
         r.add("bakery.auth.admin-mtls-header", () -> "Cf-Authenticated-Client-Cert");
         r.add("bakery.auth.admin-mtls-verified-header", () -> "Cf-Authenticated-Client-Cert-Verified");
     }
+
+    @MockitoBean
+    ProductionConfigValidator configValidator;
 
     @Autowired
     MockMvc mvc;

@@ -46,6 +46,8 @@ bakery:
     max-edge-pixels: ${MEDIA_MAX_EDGE_PIXELS:1600}
     max-decode-pixels: ${MEDIA_MAX_DECODE_PIXELS:40000000}
     max-source-edge: ${MEDIA_MAX_SOURCE_EDGE:10000}
+  edge:
+    cloudflare-proxy: ${CLOUDFLARE_PROXY:false}
   auth:
     jwt-secret: ${JWT_SECRET:}
     app-encryption-key: ${APP_ENCRYPTION_KEY:}

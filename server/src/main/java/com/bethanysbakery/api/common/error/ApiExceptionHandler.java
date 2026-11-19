@@ -1,12 +1,15 @@
 package com.bethanysbakery.api.common.error;
 
 import com.bethanysbakery.api.auth.AuthException;
+import com.bethanysbakery.api.auth.audit.AuditService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -29,6 +32,12 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 public class ApiExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
+
+    private final Environment environment;
+
+    public ApiExceptionHandler(Environment environment) {
+        this.environment = environment;
+    }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<Problem> handleValidation(MethodArgumentNotValidException ex, HttpServletRequest request) {
@@ -143,7 +152,12 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     ResponseEntity<Problem> handleUnexpected(Exception ex, HttpServletRequest request) {
-        log.error("Unhandled exception for {} {}", request.getMethod(), request.getRequestURI(), ex);
+        if (!environment.acceptsProfiles(Profiles.of("prod", "staging"))) {
+            log.error("Unhandled exception for {} {}", request.getMethod(), request.getRequestURI(), ex);
+        } else {
+            log.error("Unhandled exception for {} {}: {} {}", request.getMethod(), request.getRequestURI(),
+                ex.getClass().getSimpleName(), AuditService.scrubFreeText(String.valueOf(ex.getMessage())));
+        }
         return problem(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error", "An unexpected error occurred",
             "INTERNAL_ERROR", request, null);
     }

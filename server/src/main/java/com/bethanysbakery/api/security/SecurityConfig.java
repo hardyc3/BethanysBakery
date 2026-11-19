@@ -20,9 +20,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
-import org.springframework.web.cors.CorsConfiguration;
-import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.security.web.header.writers.StaticHeadersWriter;
 
 @Configuration
 public class SecurityConfig {
@@ -55,11 +53,17 @@ public class SecurityConfig {
             .formLogin(form -> form.disable())
             .httpBasic(basic -> basic.disable())
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .cors(cors -> cors.configurationSource(denyAllCors()))
+            .cors(cors -> cors.disable())
             .headers(headers -> headers
                 .contentTypeOptions(cto -> {})
                 .frameOptions(frame -> frame.deny())
                 .referrerPolicy(rp -> rp.policy(ReferrerPolicyHeaderWriter.ReferrerPolicy.NO_REFERRER))
+                // Static writers: Cloudflare terminates TLS, so origin requests are HTTP but must still
+                // emit browser security headers on the public response.
+                .addHeaderWriter(new StaticHeadersWriter("Strict-Transport-Security",
+                    "max-age=31536000; includeSubDomains"))
+                .addHeaderWriter(new StaticHeadersWriter("Permissions-Policy",
+                    "camera=(), microphone=(), geolocation=()"))
             )
             .exceptionHandling(ex -> ex
                 .authenticationEntryPoint((req, res, e) -> SecurityProblemWriter.write(req, res, mapper,
@@ -92,10 +96,4 @@ public class SecurityConfig {
         return http.build();
     }
 
-    @Bean
-    CorsConfigurationSource denyAllCors() {
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", new CorsConfiguration());
-        return source;
-    }
 }

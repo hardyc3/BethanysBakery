@@ -1,0 +1,24 @@
+# Token-only setup is the S7 default: compose passes the tunnel token with
+# `cloudflared tunnel run --token ...`; no config file is mounted into the
+# container. This file documents the routes the named tunnel must have.
+#
+# Create/verify the tunnel routes from the Cloudflare dashboard or with:
+#   cloudflared tunnel route dns <tunnel-uuid> bakery.cherry-home.com
+#   cloudflared tunnel route dns <tunnel-uuid> bakery-admin-api.cherry-home.com
+#   cloudflared tunnel route dns <tunnel-uuid> bakery-pair.cherry-home.com
+#
+# Staging uses the matching *-staging hostnames and its own tunnel token.
+#
+# WAF, geo blocking, cache rules, HSTS, and admin mTLS are OWNED BY RUNBOOKS,
+# not by this file. See infra/runbooks/cloudflare-tunnel.md,
+# cloudflare-cache.md, and cloudflare-mtls-ca.md.
+tunnel: REPLACE_WITH_TUNNEL_UUID
+credentials-file: /root/.cloudflared/REPLACE_WITH_TUNNEL_UUID.json
+ingress:
+  - hostname: bakery.cherry-home.com
+    service: http://web:80
+  - hostname: bakery-admin-api.cherry-home.com
+    service: http://api:8080
+  - hostname: bakery-pair.cherry-home.com
+    service: http://api:8080
+  - service: http_status:404

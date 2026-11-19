@@ -90,6 +90,70 @@ class OrderIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void orderCreationIsLimitedToTenPerCustomerPerHourWithRetryAfter() throws Exception {
+        for (int i = 0; i < 10; i++) {
+            createOrder(buyer, plainOfferingId, 1, List.of(), null).andExpect(status().isCreated());
+        }
+        createOrder(buyer, plainOfferingId, 1, List.of(), null)
+            .andExpect(status().isTooManyRequests())
+            .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header()
+                .string("Retry-After", org.hamcrest.Matchers.matchesPattern("[1-9][0-9]*")));
+    }
+
+    @Test
+    void duplicateLinesMergeAndOutboxUsesExactKeyAndCurrentAvailability() throws Exception {
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("menuDateId", dateId);
+        body.put("pickupWindowId", windowId);
+        body.put("idempotency_key", "merge-key");
+        ArrayNode items = body.putArray("items");
+        for (int quantity : new int[] {2, 3}) {
+            ObjectNode item = items.addObject();
+            item.put("offeringId", plainOfferingId);
+            item.put("quantity", quantity);
+            item.putArray("optionIds");
+        }
+        MvcResult result = mvc.perform(post("/api/v1/orders")
+                .cookie(buyer, csrfByCookie.get(buyer.getValue()).cookie())
+                .header("X-CSRF-Token", csrfByCookie.get(buyer.getValue()).token())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(body)))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.lines.length()").value(1))
+            .andExpect(jsonPath("$.lines[0].quantity").value(5))
+            .andReturn();
+        String orderId = objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asText();
+
+        assertThat(jdbc.queryForObject("select idempotency_key from outbox_event where aggregate_id = ?::uuid",
+            String.class, orderId)).isEqualTo("order:" + orderId + ":created");
+        java.sql.Timestamp availableAt = jdbc.queryForObject(
+            "select available_at from outbox_event where aggregate_id = ?::uuid", java.sql.Timestamp.class, orderId);
+        assertThat(availableAt.toInstant()).isBetween(Instant.now().minusSeconds(60), Instant.now().plusSeconds(5));
+    }
+
+    @Test
+    void bakeListExcludesRejectedAndExpiredOrders() throws Exception {
+        String active = orderId(createOrder(buyer, plainOfferingId, 1, List.of(), null));
+        adminPost("/accept").apply(active);
+        String rejected = orderId(createOrder(buyer, plainOfferingId, 1, List.of(), null));
+        mvc.perform(post("/admin/v1/orders/" + rejected + "/reject").headers(adminHeaders())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"quality\"}"))
+            .andExpect(status().isOk());
+        String expired = orderId(createOrder(buyer, plainOfferingId, 1, List.of(), null));
+        jdbc.update("update orders set expires_at = ? where id = ?::uuid",
+            java.sql.Timestamp.from(Instant.now().minusSeconds(60)), expired);
+        expiryJob.expireDueOrders();
+        assertEquals(expired, "EXPIRED");
+
+        JsonNode bakeList = objectMapper.readTree(mvc.perform(get("/admin/v1/bake-list")
+                .param("date", bakeDate.toString()).headers(adminHeaders()))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(bakeList.get("orderCount").asInt()).isEqualTo(1);
+        assertThat(bakeList.get("items").get(0).get("totalQuantity").asInt()).isEqualTo(1);
+        assertThat(active).isNotBlank();
+    }
+
+    @Test
     void duplicateIdempotencyKeyReturnsExistingOrderWithoutDuplicateEffects() throws Exception {
         MvcResult first = createOrder(buyer, plainOfferingId, 1, List.of(), "retry-key")
             .andExpect(status().isCreated()).andReturn();
@@ -500,6 +564,65 @@ class OrderIntegrationTest extends IntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON).content("{}"))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.code").value("CSRF_INVALID"));
+    }
+
+    @Test
+    void fiftyConcurrentOrdersDoNotOversellTenUnits() throws Exception {
+        List<Cookie> cookies = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            Cookie cookie = customerCookie("load" + i + "@example.com", "Load " + i);
+            csrfByCookie.put(cookie.getValue(), csrf(cookie));
+            cookies.add(cookie);
+        }
+        var executor = Executors.newFixedThreadPool(50);
+        try {
+            List<CompletableFuture<MvcResult>> futures = new ArrayList<>();
+            for (int i = 0; i < cookies.size(); i++) {
+                Cookie cookie = cookies.get(i);
+                String ip = "10.1." + (i / 256) + "." + (i % 256);
+                String key = "load-" + i;
+                futures.add(CompletableFuture.supplyAsync(() -> {
+                    try {
+                        ObjectNode body = objectMapper.createObjectNode();
+                        body.put("menuDateId", dateId);
+                        body.put("pickupWindowId", windowId);
+                        body.put("idempotency_key", key);
+                        ArrayNode items = body.putArray("items");
+                        ObjectNode item = items.addObject();
+                        item.put("offeringId", plainOfferingId);
+                        item.put("quantity", 1);
+                        item.putArray("optionIds");
+                        CsrfToken csrf = csrfByCookie.get(cookie.getValue());
+                        return mvc.perform(post("/api/v1/orders").cookie(cookie, csrf.cookie())
+                                .header("X-CSRF-Token", csrf.token()).header("CF-Connecting-IP", ip)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(objectMapper.writeValueAsString(body)))
+                            .andReturn();
+                    } catch (Exception ex) {
+                        throw new IllegalStateException(ex);
+                    }
+                }, executor));
+            }
+            int created = 0;
+            int soldOut = 0;
+            for (CompletableFuture<MvcResult> future : futures) {
+                MvcResult result = future.join();
+                int status = result.getResponse().getStatus();
+                if (status == 200 || status == 201) {
+                    created++;
+                } else {
+                    assertThat(status).isEqualTo(409);
+                    soldOut++;
+                }
+            }
+            assertThat(created).isEqualTo(10);
+            assertThat(soldOut).isEqualTo(40);
+        } finally {
+            executor.shutdownNow();
+        }
+        assertThat(jdbc.queryForObject("select reserved_count from offering where id = ?::uuid",
+            Integer.class, plainOfferingId)).isEqualTo(10);
+        assertThat(jdbc.queryForObject("select count(*) from orders", Integer.class)).isEqualTo(10);
     }
 
     // -- helpers ----------------------------------------------------------

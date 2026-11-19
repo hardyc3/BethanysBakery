@@ -69,9 +69,11 @@ public abstract class IntegrationTestBase {
     @Autowired protected AdminUserRepository admins;
     @Autowired protected AdminDeviceRepository devices;
     @Autowired protected AuditEventRepository auditEvents;
+    @Autowired protected com.bethanysbakery.api.auth.RateLimiter rateLimiter;
 
     @BeforeEach
     void resetDatabase() {
+        rateLimiter.clear();
         jdbc.execute("""
             TRUNCATE TABLE audit_event, refresh_token, otp_challenge, device_pairing,
                 notification_delivery, notification, notification_preference,

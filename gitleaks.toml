@@ -1,0 +1,14 @@
+title = "Bethany's Bakery gitleaks configuration"
+
+[extend]
+useDefault = true
+
+# Fixtures intentionally contain invalid/weak values for negative-path tests.
+[allowlist]
+description = "Test fixtures and generated reports only; never add runtime secrets here"
+paths = [
+  '''infra/tests/fixtures/.*''',
+  '''infra/runbooks/tools/.*''',
+  '''server/build/reports/.*''',
+  '''.*/zap/.*''',
+]

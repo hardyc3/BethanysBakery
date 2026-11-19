@@ -3,7 +3,9 @@ package com.bethanysbakery.api.api.order;
 import com.bethanysbakery.api.auth.AuthException;
 import com.bethanysbakery.api.auth.RateLimiter;
 import com.bethanysbakery.api.auth.customer.CustomerPrincipal;
+import com.bethanysbakery.api.common.web.ClientIps;
 import com.bethanysbakery.api.order.OrderService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.time.Duration;
 import java.util.UUID;
@@ -22,10 +24,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class CustomerOrderController {
 
-    private static final int ORDER_CREATION_LIMIT = 20;
-    private static final Duration ORDER_CREATION_WINDOW = Duration.ofMinutes(1);
+    private static final int ORDER_CREATION_LIMIT = 10;
+    private static final int ORDER_CREATION_IP_LIMIT = 30;
+    private static final Duration ORDER_CREATION_WINDOW = Duration.ofHours(1);
     private static final int ORDER_CANCEL_LIMIT = 20;
-    private static final Duration ORDER_CANCEL_WINDOW = Duration.ofMinutes(1);
+    private static final Duration ORDER_CANCEL_WINDOW = Duration.ofHours(1);
 
     private final OrderService service;
     private final RateLimiter rateLimiter;
@@ -37,8 +40,9 @@ public class CustomerOrderController {
 
     @PostMapping("/orders")
     public ResponseEntity<OrderApi.Order> create(@Valid @RequestBody OrderApi.CreateOrderRequest request,
-            @AuthenticationPrincipal CustomerPrincipal principal) {
+            @AuthenticationPrincipal CustomerPrincipal principal, HttpServletRequest httpRequest) {
         requireRate("order-create:" + principal.customerId(), ORDER_CREATION_LIMIT, ORDER_CREATION_WINDOW);
+        requireRate("order-create-ip:" + ClientIps.from(httpRequest), ORDER_CREATION_IP_LIMIT, ORDER_CREATION_WINDOW);
         OrderService.Created result = service.create(request, principal.customerId());
         return ResponseEntity.status(result.created() ? HttpStatus.CREATED : HttpStatus.OK).body(result.order());
     }

@@ -1,0 +1,25 @@
+-- S7 hardening: no schema changes.
+--
+-- Audited against docs/domain-model.md section 10 and migrations V1-V6. Every required
+-- index, unique constraint, partial unique index, and check constraint is already present:
+--   orders(customer_id, created_at desc)          -> idx_orders_customer_created (V5)
+--   orders(menu_date_id, status, created_at)      -> idx_orders_date_status_created (V5)
+--   orders(pickup_window_id, status)              -> idx_orders_window_status (V5)
+--   orders(status, expires_at)                    -> idx_orders_status_expires (V5)
+--   order_line(offering_id)                       -> idx_order_line_offering (V5)
+--   offering(menu_date_id, status)                -> idx_offering_date_status (V4)
+--   pickup_window(menu_date_id)                   -> idx_pickup_window_date prefix (V4)
+--   offering_window(pickup_window_id)             -> idx_offering_window_window (V4)
+--   notification(status, scheduled_at)            -> idx_notification_status_scheduled (V6)
+--   notification_delivery(notification_id)        -> idx_notification_delivery_notification (V6)
+--   outbox_event(status, available_at)            -> idx_outbox_status_available (V5)
+--   outbox_event(idempotency_key) where not null   -> uq_outbox_idempotency (V5)
+--   otp_challenge(destination_hash, created_at)   -> idx_otp_destination_created (V2)
+--   refresh_token(token_hash) unique              -> V2
+--   admin_device(cert/api key hashes) unique      -> V2
+--   customer partial email/phone uniques          -> V2
+--   enum/quantity/counter check constraints       -> V2-V6
+--
+-- Idempotency keys for orders are intentionally scoped per customer (S5); no global
+-- unique index is added. No prior migration is edited and no destructive change is made.
+SELECT 1;
