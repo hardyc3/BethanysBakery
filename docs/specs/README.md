@@ -21,10 +21,10 @@ If a phase requires a contract change, update the spec and OpenAPI in the same p
 ### Server
 
 ```text
-S1 → S2 → S3 → S4 → S5 → S6 → S7
+S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8
 ```
 
-S7 can validate the API/Postgres/Cloudflare stack after S6. Full-stack HTTPS verification of the customer web container waits for W8, which owns `web/Dockerfile` and `web/nginx.conf`.
+S7 can validate the API/Postgres/Cloudflare stack after S6. Full-stack HTTPS verification of the customer web container waits for W8, which owns `web/Dockerfile` and `web/nginx.conf`. S8 records the owner review decisions, the phase-completion audit, and the follow-up register; S9–S12 are planned follow-up phases listed in that register and are not yet specified.
 
 ### Customer web
 
@@ -41,6 +41,7 @@ Web dependencies:
 - W6 needs S5 + S6.
 - W7 needs S5 + S6.
 - W8 needs all prior phases.
+- W5 and W7 consume S8's `client_submitted_at` and notification disclosure contract.
 
 ### Admin Android
 
@@ -57,7 +58,7 @@ Android dependencies:
 - A5 needs S4.
 - A6 needs S5 + S6.
 - A7 needs S6.
-- A8 needs S6 + S7.
+- A8 needs S6 + S7; A7/A8 must absorb S8's FCM removal, single-active-device rule, and one-hostname routing.
 
 A phase may start only when its dependencies are merged and their tests pass.
 
@@ -208,6 +209,7 @@ Local profile behavior:
 | S5 | `server/S5-orders-inventory.md` | Orders, atomic reservation, expiry, cancel/reject, bake list |
 | S6 | `server/S6-notifications-payments.md` | Payment state, Mailgun, Textbee, FCM, outbox, scheduler |
 | S7 | `server/S7-hardening-deploy.md` | Security hardening, deploy, backups, runbooks, e2e/load tests |
+| S8 | `server/S8-review-followups.md` | Owner review: isolation proof, submission timestamps, consent disclosure, single hostname, Mailgun/Textbee admin alerts, minimal LXC ops, follow-up routing |
 | W1 | `web/W1-scaffold.md` | React/Vite scaffold, design system, API client |
 | W2 | `web/W2-auth-profile.md` | OTP login, session, profile, contact verification |
 | W3 | `web/W3-menu-browse.md` | Weekly menu browse: dates/pickup, cutoff, availability, inline basket |
