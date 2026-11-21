@@ -28,8 +28,15 @@ public final class OrderApi {
         @JsonAlias("idempotencyKey")
         @Size(max = 128) String idempotencyKey,
         @Valid @NotEmpty @Size(max = 50) List<@Valid CreateOrderItem> items,
-        @Size(max = 500) String notes
-    ) {}
+        @Size(max = 500) String notes,
+        @JsonProperty("client_submitted_at")
+        @JsonAlias("clientSubmittedAt") Instant clientSubmittedAt
+    ) {
+        public CreateOrderRequest(UUID menuDateId, UUID pickupWindowId, String idempotencyKey,
+                List<CreateOrderItem> items, String notes) {
+            this(menuDateId, pickupWindowId, idempotencyKey, items, notes, null);
+        }
+    }
 
     public record CreateOrderItem(
         @NotNull UUID offeringId,

@@ -105,9 +105,9 @@ class ProductionConfigValidatorTest {
     }
 
     private static NotificationProperties notifications(String mailgunBase, String textbeeBase) {
-        return new NotificationProperties(false, null,
+        return new NotificationProperties(false, null, null,
             new NotificationProperties.Mailgun(null, null, mailgunBase, null),
-            new NotificationProperties.Textbee(textbeeBase, null, null, "webhook-secret"), null);
+            new NotificationProperties.Textbee(textbeeBase, null, null, "webhook-secret"));
     }
 
     private static ProductionConfigValidator validator(MockEnvironment env, BakeryProperties props,

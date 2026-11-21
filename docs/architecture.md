@@ -1,7 +1,7 @@
 # Bethany's Bakery — Architecture
 
 Status: approved baseline  
-Last updated: 2026-11-14
+Last updated: 2026-11-20
 
 ## 1. Context
 
@@ -51,31 +51,35 @@ Constraints:
 ## 4. System context
 
 ```text
-                    ┌─────────────────────────────┐
-                    │        Cloudflare           │
-                    │  TLS, WAF, geo, mTLS, cache │
-                    └──────────┬──────────────────┘
-                               │ Cloudflare Tunnel (outbound only)
-          ┌────────────────────┼─────────────────────┐
-          │                    │                     │
-   bakery.cherry-home.com   bakery-admin-api.cherry-home.com   bakery-pair.cherry-home.com
-          │                    │                     │
-          ▼                    ▼                     ▼
-   ┌─────────────┐      ┌─────────────────────────────────┐
-   │ web (nginx) │─────▶│ api (Spring Boot)               │
-   │ React SPA   │ /api │                                 │
-   └─────────────┘      │  customer API + admin API       │
-                        │  schedulers + notification worker│
-                        └───────┬─────────────┬───────────┘
-                                │             │
-                         ┌──────▼─────┐  ┌────▼──────────┐
-                         │ PostgreSQL │  │ media volume  │
-                         └────────────┘  └───────────────┘
-                                │
-                         ┌──────▼─────────────────────────┐
-                         │ Mailgun, Textbee, FCM          │
-                         └────────────────────────────────┘
+                    ┌───────────────────────────────────────┐
+                    │              Cloudflare               │
+                    │  TLS, WAF, geo, path-scoped mTLS      │
+                    └──────────────────┬────────────────────┘
+                                       │ Cloudflare Tunnel (outbound only)
+                                       │ one hostname: bakery.cherry-home.com
+                     ┌─────────────────┼─────────────────┐
+                /admin/v1             /api               /
+                     │                 │                 │
+                     ▼                 ▼                 ▼
+              ┌─────────────────────────────┐   ┌──────────────────┐
+              │ api (Spring Boot)           │   │ web (nginx / W8) │
+              │ customer API + admin API    │   │ React SPA        │
+              │ schedulers + notify worker  │   └──────────────────┘
+              └──────┬──────────┬───────────┘
+                     │          │
+              ┌──────▼─────┐ ┌──▼──────────┐
+              │ PostgreSQL │ │ media volume│
+              └────────────┘ └─────────────┘
+                     │
+              ┌──────▼──────────────────┐
+              │ Mailgun (email),        │
+              │ Textbee (SMS, optional)  │
+              └─────────────────────────┘
 ```
+
+The single Proxmox LXC runs all four containers. Cloudflare WAF/mTLS rules match
+request paths, not hostnames; `EdgeRequestFilter` stays path-based and no
+hostname is hardcoded in application code.
 
 ## 5. Stack
 
@@ -114,7 +118,6 @@ Constraints:
 - Hilt
 - Retrofit + OkHttp
 - Kotlin serialization
-- FCM
 - Android Photo Picker / CameraX
 - QR scanning
 - Android Keystore for device key, client certificate, API key, tokens
@@ -125,14 +128,15 @@ Constraints:
 
 ### Infrastructure
 
-- Alpine Linux host
+- Alpine Linux Proxmox LXC (one production container)
 - Docker Engine
 - Docker Compose plugin
 - Cloudflare Tunnel (`cloudflared`)
 - PostgreSQL container
 - nginx container for the web app
-- restic for manual encrypted backups
+- Proxmox full-container backups (no in-repo backup automation)
 - Private CA for admin device client certificates
+- Cloudflare-managed HTTPS certificates (no origin cert)
 
 ## 6. Repository layout
 
@@ -154,15 +158,11 @@ android-admin/
 infra/
   compose.dev.yml
   compose.prod.yml
-  compose.staging.yml
   setup-alpine.sh
   .env.example
   cloudflared/
-  scripts/
-    build.sh
-    deploy.sh
-    backup.sh
-    restore.sh
+  scripts/          # generate-ca, pair-device, bootstrap-admin, status, logs
+  runbooks/
 docs/
   initial_project_description.md
   architecture.md
@@ -170,46 +170,51 @@ docs/
   api/openapi.yaml
   specs/
     README.md
-    server/S1..S7
+    server/S1..S8
     web/W1..W8
     android/A1..A8
 ```
 
 ## 7. Hostnames
 
-Placeholders use `cherry-home.com`. Production values live in `/opt/bethanys-bakery/prod/.env`; staging uses `/opt/bethanys-bakery/staging/.env`.
+One public hostname: `bakery.cherry-home.com` (placeholder for the owner's
+domain). Production values live in `/opt/bethanys-bakery/.env`. There is no
+staging hostname and no pair/admin-api hostname.
 
-| Hostname | Purpose | Protection |
+| Path on `bakery.cherry-home.com` | Tunnel service | Protection |
 |---|---|---|
-| `bakery.cherry-home.com` | Customer web + public/customer API | Cloudflare WAF, US-only geo rule |
-| `bakery-admin-api.cherry-home.com` | Admin API | Cloudflare mTLS client certificate + device API key |
-| `bakery-pair.cherry-home.com` | One-time device pairing only | No mTLS, pairing code + rate limit |
-| `staging-bakery.cherry-home.com` | Staging customer web | Cloudflare Access or basic auth |
-| `staging-bakery-admin-api.cherry-home.com` | Staging admin API | mTLS |
+| `/admin/v1` | `api:8080` | Cloudflare mTLS on `/admin/v1/**` except `/admin/v1/devices/pair`; device API key at origin |
+| `/api` | `api:8080` | Cloudflare WAF, US-only geo rule on `/api/v1/**` (webhooks exempt) |
+| `/` | `web:80` | Cloudflare WAF; W8 SPA |
 
-Cloudflare Tunnel routes each hostname to the internal Docker service. No inbound ports on the Proxmox host.
+`/admin/v1/devices/pair` is mTLS-exempt, rate limited at the edge, and returns
+409 `INVALID_STATE` if a device is already active. `/api/v1/webhooks/textbee`
+is unauthenticated at the edge and HMAC-signature-verified at the origin.
+Cloudflare Tunnel is the only ingress; no inbound ports on the Proxmox host.
+Cloudflare handles HTTPS certificates. No hostname is hardcoded in app code;
+`EdgeRequestFilter` matches paths only.
 
 ## 8. Docker Compose topology
 
-Production services:
+All services run in one Alpine Proxmox LXC via `infra/compose.prod.yml`:
 
-- `web`: nginx Alpine, serves React build, proxies `/api` to `api`.
+- `web`: nginx (W8 image; `httpd:2.4-alpine` placeholder until then), serves the
+  React build. Its `/api` proxy is for local development only — production
+  ingress routes `/api` directly to `api:8080`.
 - `api`: Spring Boot, exposes `8080` only on the internal Docker network.
 - `postgres`: PostgreSQL 16, internal network only, named volume.
 - `cloudflared`: outbound tunnel, configured from `CLOUDFLARE_TUNNEL_TOKEN`.
-- `backup`: optional manual profile container with restic and PostgreSQL client. Not always running.
+- No backup profile container and no staging project.
 
 Networks:
 
-- `edge`: web and cloudflared.
-- `backend`: api, web, postgres.
+- `edge`: web, api, cloudflared.
+- `backend`: api, postgres.
 
-Volumes:
+Volumes (inside the LXC, included in Proxmox container backups):
 
 - `postgres-data`
 - `media-data`
-- `caddy-data` not used. Cloudflare terminates TLS.
-- `backup-cache` optional.
 
 Healthchecks:
 
@@ -219,48 +224,50 @@ Healthchecks:
 - `cloudflared`: process check
 
 Startup order: postgres healthy → api healthy → web healthy → cloudflared.
-
 Flyway migrations run during API startup. One API replica only.
 
 ## 9. Deployment strategy
 
-Manual and script-driven.
+Manual, no CI/CD and no registry. One production environment on one LXC.
 
-1. `infra/setup-alpine.sh` prepares the host:
-   - installs `docker`, `docker-cli-compose`, `restic`, `openssl`, `curl`, `jq`
+1. `infra/setup-alpine.sh` prepares the LXC once:
+   - installs `docker`, `docker-cli-compose`, `git`, `openssl`, `curl`, `jq`
    - enables Docker
-   - creates `/opt/bethanys-bakery/{prod,staging,secrets,backups}`
-   - creates service user and permissions
+   - creates `/opt/bethanys-bakery` and `/opt/bethanys-bakery/secrets`
+   - creates the service user and permissions
    - generates the admin device CA if missing
-   - writes a template `.env`
+   - writes `/opt/bethanys-bakery/.env` from the example with strong secrets
    - does not start the stack
-2. Operator fills `/opt/bethanys-bakery/prod/.env` with secrets and the Cloudflare tunnel token. Local development uses a gitignored `infra/.env`.
-3. `infra/scripts/build.sh` builds API and web images locally with Compose.
-4. `infra/scripts/deploy.sh prod`:
-   - validates env
-   - runs `docker compose pull` for base images if desired
-   - builds
-   - starts postgres
-   - runs Flyway via API startup
-   - starts api, web, cloudflared
-   - waits for health
-5. `infra/scripts/backup.sh` performs manual backup.
-6. `infra/scripts/restore.sh <backup>` restores DB and media.
+2. Operator fills the tunnel token, provider secrets, `ADMIN_ALERT_EMAIL`, and
+   optional `ADMIN_ALERT_PHONE` in that `.env`, then uploads the device CA to
+   Cloudflare. Local development uses `infra/compose.dev.yml`.
+3. Deploy from the checkout inside the LXC:
+   ```bash
+   cd /opt/bethanys-bakery
+   git pull --ff-only
+   docker compose -f infra/compose.prod.yml --env-file /opt/bethanys-bakery/.env up -d --build
+   ```
+4. `infra/scripts/status.sh` reports health. There is no build/deploy/check-env
+   wrapper; the raw commands above are the deployment procedure.
 
-Staging is a separate compose project and database on the same host, using different hostnames and volumes. Never share the production database.
-
-Rollback: redeploy the previous image tag. Database migrations are forward-only. Destructive migrations require an explicit backup and a spec update.
+Backups are Proxmox full-container backups only. Owner verifies that a snapshot
+contains the Docker volumes, `.env`, and the device CA key, and keeps off-repo
+copies of the secrets. No pg_dump, restic, offsite copy, or restore script is
+shipped here. Rollback is code-first (check out the previous commit and re-run
+the Compose command); data recovery is a Proxmox snapshot restore. Flyway
+migrations are forward-only.
 
 ## 10. Secrets and configuration
 
-- Local secrets live in a gitignored `infra/.env` with mode `600`.
-- Production secrets live in `/opt/bethanys-bakery/prod/.env`; staging in `/opt/bethanys-bakery/staging/.env`. Both mode `600`, never in git.
+- Local development uses `infra/.env.example` with local-safe defaults.
+- Production secrets live in `/opt/bethanys-bakery/.env`, mode `600`, never in git.
 - `infra/.env.example` documents every variable.
 - Admin CA private key lives in `/opt/bethanys-bakery/secrets/device-ca.key`, mode `600`, never in git.
 - Spring Boot reads environment variables. No secrets in application YAML.
 - Tokens, OTP codes, API keys, passwords, and full contact details are redacted from logs.
-- Database password and restic password are generated by setup and stored only in `.env`.
+- Database password and app encryption key are generated by setup and stored only in `.env`.
 - Cloudflare tunnel token is stored only in `.env`.
+- `ADMIN_ALERT_EMAIL` and `ADMIN_ALERT_PHONE` are masked in API responses and logs; full values only in `.env`.
 
 Configuration groups:
 
@@ -269,10 +276,9 @@ Configuration groups:
 - `DB_*`: PostgreSQL connection.
 - `JWT_*`: signing keys, access/refresh TTLs.
 - `OTP_*`: length, TTL, attempts, rate limits.
-- `MAILGUN_*`, `TEXTBEE_*`, `FCM_*`.
-- `ADMIN_*`: admin alert email, app version info.
+- `MAILGUN_*`, `TEXTBEE_*`: email and SMS providers.
+- `ADMIN_*`: admin alert email/phone, app version info.
 - `CLOUDFLARE_*`: tunnel token, mTLS header name, country header.
-- `BACKUP_*`: restic repository, password.
 - `MEDIA_*`: media root, 10 MB upload cap, max decode/edge bounds. No secrets.
 
 ## 11. Security model
@@ -301,17 +307,18 @@ Configuration groups:
 
 - Per-device EC P-256 keypair generated in Android Keystore.
 - Pairing: one-time 128-bit code, 15-minute TTL, single use, rate limited.
-- Pair endpoint lives on the non-mTLS `pair` hostname and only issues a client certificate.
+- Pair endpoint is `/admin/v1/devices/pair` on the one hostname; it is the only
+  mTLS-exempt admin path and only issues a client certificate.
 - Server private CA signs the device CSR.
-- Device certificate + API key + Cloudflare mTLS protect admin APIs.
+- Device certificate + API key + path-scoped Cloudflare mTLS protect admin APIs.
 - API key is random 256-bit, stored hashed server-side, shown once.
 - Cloudflare validates the client certificate; origin verifies the forwarded certificate fingerprint against an active, non-revoked `admin_device`.
-- Certificate pinning in the app uses a configured pin set with backup pins. Pin rotation is an operational procedure.
+- Cloudflare manages HTTPS certificates; no origin certificate pinning runbook exists.
 - Admin login: email + password + TOTP.
 - Access token 15 minutes, refresh token 14 days, rotating. Tokens stored in Keystore.
 - Recovery codes hashed server-side.
 - Device revocation blocks API key and certificate fingerprint.
-- Single admin account enforced by configuration and a unique constraint.
+- Single admin account, and exactly one `ACTIVE` admin device, enforced by database constraints and service checks.
 
 ### Application
 
@@ -325,7 +332,7 @@ Configuration groups:
 - Output encoding supplied by React/Compose; no HTML injection.
 - Uploaded images validated by magic bytes and re-encoded server-side. EXIF stripped.
 - SQL via JPA and parameterized queries only.
-- Dependency and container scanning are manual checklist items.
+- Dependency and container scanning are not scripted; repeatable tooling is routed to S11.
 
 ### Privacy
 
@@ -333,7 +340,7 @@ Configuration groups:
 - No payment card data. Venmo is out of band.
 - PII redaction in logs.
 - Data deletion request handled manually by the admin.
-- Retention: active data until deletion request. Backups retained 30 days.
+- Retention: active data until deletion request. Proxmox full-container backup retention is owner-managed outside this repo.
 
 ## 12. Core flows
 
@@ -355,7 +362,7 @@ Configuration groups:
 6. Server reserves window capacity and offering quantities in one transaction.
 7. Order is created as `PENDING` with `UNPAID` payment status.
 8. Customer sees Venmo handle, amount, and order number.
-9. Admin receives a push/email notification.
+9. Admin receives a new-order email; optional Textbee SMS goes to `ADMIN_ALERT_PHONE`. No push channel exists.
 
 ### Order acceptance and payment
 
@@ -385,13 +392,17 @@ Configuration groups:
 
 ### Notifications
 
-- Transactional email via Mailgun.
-- Transactional SMS via Textbee.
-- Admin push via FCM.
-- Admin email fallback.
+- Transactional email via Mailgun. `ORDER_PAID` admin email and new-order admin
+  email are mandatory and go to `ADMIN_ALERT_EMAIL`.
+- Transactional SMS via Textbee; optional new-order admin SMS goes to
+  `ADMIN_ALERT_PHONE`. No Firebase/FCM component exists.
 - Notification rows are written transactionally with an outbox event.
 - Worker dispatches with retries and exponential backoff.
-- SMS requires explicit consent. STOP/START handled by Textbee webhook.
+- Customers choose notification types per channel; an explicit all-off choice
+  suppresses every customer message, including active-order menu cancellations.
+  The in-app view remains available.
+- SMS requires explicit phone verification and consent. STOP/START handled by
+  the signed Textbee webhook (unauthenticated at the edge, geo-exempt).
 - Quiet hours: no menu-announcement or reminder SMS outside 09:00–20:00 bakery-local. Transactional order-status SMS (accepted, ready, delayed, rejected, cancelled) may be sent when the event occurs.
 
 ## 13. Inventory and concurrency
@@ -430,33 +441,38 @@ Configuration groups:
 - Admin notification failure list and retry action.
 - Audit log viewer API.
 - No Prometheus/Grafana stack in scope. Optional host-level uptime check.
-- Backup script exits non-zero on failure. Operator runs a monthly restore drill.
+- No in-repo backup script or drill; the owner verifies Proxmox snapshot scope
+  and recovery.
 
 ## 16. Failure handling
 
-- Mailgun/Textbee/FCM outage: notification stays `FAILED`, admin can retry. Orders still work.
+- Mailgun/Textbee outage: notification stays `FAILED`, admin can retry. Orders still work.
 - Scheduler missed run: jobs are idempotent and scan for due work on next tick.
 - API restart: Flyway idempotent, schedulers resume, pending notifications retry.
-- Database loss: restore from latest nightly backup. Up to 24 hours of orders can be lost. Operator may increase backup frequency.
-- Media loss: restore media archive from backup.
+- Data or media loss: owner restores the whole LXC from the latest Proxmox
+  container backup. Recovery-point/target depends on the owner's snapshot
+  schedule; no separate pg_dump or media archive exists.
 - Cloudflare outage: app unreachable. No origin fallback.
-- Certificate pin rotation: app build or remote-config pin update. Documented operational procedure.
+- Device CA loss or compromise: rotate the CA and re-pair (`cloudflare-mtls-ca.md`);
+  there is no edge certificate pin rotation runbook.
 
 ## 17. Environments
 
-| Environment | Purpose | Data | Hostnames |
+| Environment | Purpose | Data | Access |
 |---|---|---|---|
-| Local | Development | Seeded fake data | localhost |
-| Staging | Pre-release checks | Fake data | staging-* |
-| Production | Real bakery | Real data | bakery.cherry-home.com |
+| Local | Development | Seeded fake data | `localhost`, local Compose only |
+| Production | Real bakery | Real data | one hostname: `bakery.cherry-home.com` |
 
-Local uses Docker Compose for API + Postgres. Mailgun/Textbee/FCM are disabled and logged to console. OTP codes appear in API logs only in the `local` profile.
+There is no staging environment, staging hostname, or staging compose project.
+Local uses `infra/compose.dev.yml` for API + Postgres. Mailgun/Textbee are
+disabled and logged to console. OTP codes appear in API logs only in the
+`local` profile.
 
 ## 18. Phase map
 
-- Server: S1 foundation, S2 auth/devices, S3 catalog/media, S4 menus/offerings/windows, S5 orders/inventory, S6 payments/notifications, S7 hardening/deploy.
+- Server: S1 foundation, S2 auth/devices, S3 catalog/media, S4 menus/offerings/windows, S5 orders/inventory, S6 payments/notifications, S7 hardening/deploy, S8 review follow-ups.
 - Customer web: W1 scaffold, W2 auth/profile, W3 menu, W4 item detail, W5 cart/checkout, W6 confirmation/status, W7 history/cancel/preferences, W8 PWA/hardening.
-- Admin Android: A1 scaffold/pairing bootstrap, A2 login/device, A3 menus/dates, A4 item templates, A5 offerings/windows, A6 orders/bake list, A7 notifications, A8 push/release.
+- Admin Android: A1 scaffold/pairing bootstrap, A2 login/device, A3 menus/dates, A4 item templates, A5 offerings/windows, A6 orders/bake list, A7 notifications, A8 push/release (FCM removed by S8).
 
 ## 19. Decision log
 
@@ -464,7 +480,7 @@ Local uses Docker Compose for API + Postgres. Mailgun/Textbee/FCM are disabled a
 |---|---|---|
 | D1 | Spring Boot + PostgreSQL | Chosen by owner; transactional inventory |
 | D2 | React + Vite PWA | One web app for Android/iOS |
-| D3 | Kotlin Compose admin app | Native security and camera/QR/FCM support |
+| D3 | Kotlin Compose admin app | Native security, camera/QR, and Keystore-backed device identity |
 | D4 | Cloudflare Tunnel | No inbound ports; TLS/WAF/mTLS at edge |
 | D5 | Manual build/deploy/backup | Owner operates Proxmox; low scale |
 | D6 | One order per pickup window | Simple capacity and pickup logistics |
@@ -473,4 +489,7 @@ Local uses Docker Compose for API + Postgres. Mailgun/Textbee/FCM are disabled a
 | D9 | Payment state separate from fulfillment state | Venmo manual, cash at pickup possible |
 | D10 | USA-only best-effort | Cloudflare geo + origin check |
 | D11 | No embedded web API secret | Web apps cannot keep secrets |
-| D12 | Seven server phases | Keep code reviews reviewable |
+| D12 | Eight server phases | Keep code reviews reviewable; S8 routes review follow-ups |
+| D13 | One public hostname with path-scoped ingress and mTLS | Fewer DNS/tunnel/rule surfaces; pair path exempt from mTLS |
+| D14 | No Firebase/FCM; Mailgun email and optional Textbee SMS for admin alerts | No Firebase project or service account to operate |
+| D15 | Proxmox full-container backups only | Owner manages backups/builds at container level; no pg_dump/restic/staging |

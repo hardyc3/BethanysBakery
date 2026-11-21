@@ -192,6 +192,12 @@ Admin receives actionable push notifications, deep links work, minimum versions 
 
 ## Handoff notes
 
-- Coordinate final pins and release URL with S7 runbooks.
-- Server FCM payload changes require a spec/OpenAPI update.
-- Keep the release keystore and `google-services.json` in the operator's secret store.
+- S8 removes Firebase/FCM entirely: no Firebase project, no `google-services.json`,
+  no push token registration (`PUT /admin/v1/devices/{deviceId}/push-token`), and
+  no push payload handling. Admin alerts are Mailgun email plus optional Textbee
+  SMS (`ADMIN_ALERT_EMAIL` / `ADMIN_ALERT_PHONE`).
+- Keep mTLS device pairing: client certificate, API key, and the one-active-device
+  rule. `/admin/v1/devices/pair` is the mTLS-exempt path on the one hostname.
+- No edge certificate pinning rotation runbook remains after S8; coordinate the
+  release URL and signing with the owner, not a pin-rotation procedure.
+- Keep the release keystore in the operator's secret store.

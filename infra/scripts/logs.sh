@@ -1,6 +1,6 @@
 #!/bin/sh
-# Tail compose logs. Defaults: prod, all services, last 200 lines, follow.
-# Examples: logs.sh staging api; LOG_LINES=50 logs.sh prod postgres api
+# Tail production compose logs. Defaults: all services, last 200 lines, follow.
+# Examples: logs.sh api; LOG_LINES=50 logs.sh postgres api
 set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
@@ -11,15 +11,8 @@ die() {
     exit 1
 }
 
-ENVIRONMENT=prod
-if [ "$#" -gt 0 ]; then
-    case $1 in
-        prod|staging) ENVIRONMENT=$1; shift ;;
-    esac
-fi
-
-ENV_FILE=${ENV_FILE:-/opt/bethanys-bakery/$ENVIRONMENT/.env}
-COMPOSE_FILE=$INFRA_DIR/compose.$ENVIRONMENT.yml
+ENV_FILE=${ENV_FILE:-/opt/bethanys-bakery/.env}
+COMPOSE_FILE=$INFRA_DIR/compose.prod.yml
 [ -f "$ENV_FILE" ] || die "missing env file: $ENV_FILE"
 export ENV_FILE
 

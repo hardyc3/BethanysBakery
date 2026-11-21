@@ -57,7 +57,19 @@ public class RequestAuthenticationFilter extends OncePerRequestFilter {
         try {
             if (path.startsWith("/admin/v1/")) {
                 if (!path.equals("/admin/v1/devices/pair")) {
-                    authenticateAdmin(request);
+                    try {
+                        authenticateAdmin(request);
+                    } catch (AuthException ex) {
+                        // An authenticated customer with no device key is an authorization failure,
+                        // not an authentication failure: let hasRole("ADMIN") answer 403.
+                        String deviceKey = request.getHeader("X-Device-Key");
+                        boolean authenticatedCustomer = (deviceKey == null || deviceKey.isBlank())
+                            && authenticateCustomer(request);
+                        if (!authenticatedCustomer) {
+                            throw ex;
+                        }
+                        // Customer principal set; Spring Security rejects the admin route with 403.
+                    }
                 }
             } else {
                 authenticateCustomer(request);
@@ -110,23 +122,26 @@ public class RequestAuthenticationFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 
-    private void authenticateCustomer(HttpServletRequest request) {
+    /** Returns true when a valid customer session was installed on the security context. */
+    private boolean authenticateCustomer(HttpServletRequest request) {
         String accessToken = cookies.read(request, CookieService.ACCESS_COOKIE);
         if (accessToken == null) {
-            return;
+            return false;
         }
         try {
             JwtService.AccessClaims claims = jwtService.parse(accessToken, SubjectType.CUSTOMER);
             Optional<Customer> customer = customers.findById(claims.subjectId());
             if (customer.isEmpty() || customer.get().getStatus() != CustomerStatus.ACTIVE) {
-                return;
+                return false;
             }
             CustomerPrincipal principal = new CustomerPrincipal(claims.subjectId(), claims.sessionId());
             var authentication = new UsernamePasswordAuthenticationToken(principal, null,
                 List.of(new SimpleGrantedAuthority("ROLE_CUSTOMER")));
             SecurityContextHolder.getContext().setAuthentication(authentication);
+            return true;
         } catch (AuthException ignored) {
             // Invalid or expired cookie: continue as anonymous. Authorization returns 401 if required.
+            return false;
         }
     }
 

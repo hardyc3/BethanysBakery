@@ -47,7 +47,7 @@ public final class AuthApi {
     public record AdminProfile(UUID id, String email, String name) {}
 
     public record AdminDevice(UUID id, String name, String platform, String status, Instant pairedAt,
-            Instant lastSeenAt, Instant revokedAt, String appVersion, boolean fcmRegistered) {}
+            Instant lastSeenAt, Instant revokedAt, String appVersion) {}
 
     public record AuditEventView(UUID id, String actorType, UUID actorId, String action, String entityType,
             UUID entityId, Object before, Object after, String requestId, Instant createdAt) {}

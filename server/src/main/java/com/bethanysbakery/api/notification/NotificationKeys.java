@@ -29,11 +29,11 @@ public final class NotificationKeys {
         return "MENU_CANCELLED:" + menuIdOrDateId + ":" + customerId;
     }
 
-    public static String adminNewOrder(UUID orderId) {
-        return "ADMIN_NEW_ORDER:" + orderId;
-    }
-
     public static String adminNewOrderEmail(UUID orderId) {
         return "ADMIN_NEW_ORDER_EMAIL:" + orderId;
+    }
+
+    public static String adminNewOrderSms(UUID orderId) {
+        return "ADMIN_NEW_ORDER_SMS:" + orderId;
     }
 }

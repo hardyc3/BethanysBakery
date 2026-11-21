@@ -1,6 +1,7 @@
 # S4 — Menus, Bake Dates, Offerings, and Pickup Windows
 
-- Status: ready
+- Status: implemented (follow-ups routed)
+- Follow-ups: [S8 review follow-up register](S8-review-followups.md#follow-up-register-all-routed-none-implemented-here)
 - Depends on: S3
 - Contract: `docs/api/openapi.yaml` → Admin Menus, Public menu read
 - Next: S5

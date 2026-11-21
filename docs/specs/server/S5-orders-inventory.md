@@ -1,6 +1,7 @@
 # S5 — Orders, Inventory, Expiry, and Bake List
 
-- Status: ready
+- Status: implemented (follow-ups routed)
+- Follow-ups: [S8 review follow-up register](S8-review-followups.md#follow-up-register-all-routed-none-implemented-here)
 - Depends on: S4
 - Contract: `docs/api/openapi.yaml` → Customer orders, Admin Orders
 - Next: S6
