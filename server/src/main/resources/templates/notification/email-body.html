@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8" /><title th:text="${title}">Bethany's Bakery</title></head>
+<body>
+  <h1 th:text="${title}">Bethany's Bakery</h1>
+  <p th:if="${intro}" th:text="${intro}"></p>
+  <table>
+    <tbody>
+      <tr th:each="line : ${lines}">
+        <th th:text="${line.label}" align="left"></th>
+        <td th:text="${line.value}"></td>
+      </tr>
+    </tbody>
+  </table>
+  <p th:if="${footer}" th:text="${footer}"></p>
+</body>
+</html>

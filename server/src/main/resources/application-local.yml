@@ -18,6 +18,8 @@ logging:
 bakery:
   media:
     root: ${MEDIA_ROOT:./media}
+  notifications:
+    admin-alert-email: ${ADMIN_ALERT_EMAIL:local-admin@example.com}
   auth:
     jwt-secret: bG9jYWwtand0LXNlY3JldC1sb2NhbC1qd3Qtc2VjcmV0LWxvY2Fs
     app-encryption-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=

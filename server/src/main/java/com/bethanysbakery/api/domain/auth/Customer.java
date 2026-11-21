@@ -83,5 +83,32 @@ public class Customer {
     public void markEmailVerified(Instant now) { this.emailVerifiedAt = now; touch(); }
     public void markPhoneVerified(Instant now) { this.phoneVerifiedAt = now; touch(); }
     public void setLastLoginAt(Instant now) { this.lastLoginAt = now; touch(); }
+
+    /** Explicit re-consent is a new consent: it also lifts any prior STOP. */
+    public void grantSmsConsent(Instant now) {
+        this.smsConsentAt = now;
+        this.smsOptOutAt = null;
+        touch();
+    }
+
+    public void revokeSmsConsent(Instant now) {
+        this.smsConsentAt = null;
+        touch();
+    }
+
+    public void markSmsOptOut(Instant now) {
+        this.smsOptOutAt = now;
+        touch();
+    }
+
+    public boolean clearSmsOptOut(Instant now) {
+        if (this.smsConsentAt == null) {
+            return false;
+        }
+        this.smsOptOutAt = null;
+        touch();
+        return true;
+    }
+
     private void touch() { this.updatedAt = Instant.now(); }
 }

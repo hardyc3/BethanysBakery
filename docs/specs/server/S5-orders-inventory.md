@@ -24,6 +24,7 @@ Create exactly as described in `docs/domain-model.md`:
 - `order_line`
 - `order_line_option`
 - `daily_order_sequence`
+- `outbox_event` — created here (not in S6's `V6`) because the order transaction must enqueue `OrderCreated` in the same commit; S6 reuses it. Schema and index are in `docs/domain-model.md`.
 
 `orders` includes all lifecycle columns from the domain model, including `payment_method`, `paid_at`, `delay_notified_at`, `delay_reason`, `inventory_released_at`, and `idempotency_key`. S6 does not need to alter the order table.
 
@@ -64,8 +65,8 @@ Request:
 
 Validation, all before any counter update:
 
-1. Menu date exists, belongs to a published menu, and is `PUBLISHED`.
-2. Window exists, is `ACTIVE`, belongs to the date.
+1. Menu date exists, belongs to a published menu, and is `PUBLISHED`. Else 409 `MENU_NOT_AVAILABLE` (unknown ID → 404 `NOT_FOUND`).
+2. Window exists, is `ACTIVE`, belongs to the date. Else 409 `WINDOW_NOT_AVAILABLE` (unknown ID → 404 `NOT_FOUND`).
 3. `now < window.startAt - cutoff`. Else 409 `CUTOFF_PASSED`. Cutoff hours come from `ORDER_CUTOFF_HOURS` (default 12).
 4. Offering exists, is `ACTIVE`, belongs to the date, and is assigned to the window. Else 409 `OFFERING_NOT_AVAILABLE`.
 5. Quantity positive.
@@ -303,17 +304,125 @@ Payment endpoint and notification operations are S6.
 - Integration: customer can only read own orders.
 - Performance smoke: 50 concurrent order attempts complete under a few seconds.
 
+## Example payloads for W5/W6/W7 and A6 fixtures
+
+W5/W6/W7 and A6 build against MSW fixtures; they do not load a seeded server. Use these representative responses as the seeded order shapes in `web/test/` and Android debug fixtures. All IDs below are UUID v7 examples; timestamps are UTC.
+
+### `POST /api/v1/orders` — `201 Created` (new) or `200 OK` (idempotent replay)
+
+```json
+{
+  "id": "01a1f188-5368-71b6-8350-d06fc674b9f2",
+  "orderNumber": "BB-20261208-0001",
+  "status": "PENDING",
+  "paymentStatus": "UNPAID",
+  "paymentMethod": null,
+  "menuDateId": "01a1f188-504e-7469-b8f9-fc5c70fcbddd",
+  "bakeDate": "2026-12-08",
+  "pickupWindow": {
+    "id": "01a1f188-50a2-7b4c-8e0f-1d2c3b4a5967",
+    "label": "Morning",
+    "startAt": "2026-12-08T19:00:00Z",
+    "endAt": "2026-12-08T21:00:00Z"
+  },
+  "customer": { "name": "Buyer One", "email": "buyer@example.com", "phone": null },
+  "lines": [
+    {
+      "id": "01a1f188-53a1-7b6e-8350-d06fc674b9f3",
+      "offeringId": "01a1f188-51ce-729f-b78d-5f4ba0d8c21f",
+      "itemName": "Cinnamon Roll",
+      "unitPriceCents": 400,
+      "quantity": 2,
+      "lineTotalCents": 1000,
+      "options": [{ "groupName": "Toppings", "optionName": "Icing", "priceDeltaCents": 100 }],
+      "notes": null
+    }
+  ],
+  "subtotalCents": 1000,
+  "totalCents": 1000,
+  "notes": null,
+  "rejectionReason": null,
+  "cancellationReason": null,
+  "cancelledBy": null,
+  "acceptedAt": null,
+  "readyAt": null,
+  "completedAt": null,
+  "paidAt": null,
+  "delayNotifiedAt": null,
+  "delayReason": null,
+  "expiresAt": "2026-12-08T07:00:00Z",
+  "createdAt": "2026-11-18T18:00:00Z",
+  "updatedAt": "2026-11-18T18:00:00Z",
+  "paymentInstructions": {
+    "venmoHandle": "bethanysbakery",
+    "venmoDisplayName": "Bethany's Bakery",
+    "amountCents": 1000,
+    "note": "BB-20261208-0001",
+    "venmoDeepLink": null
+  }
+}
+```
+
+Status variants for W6/W7 history fixtures change only `status` and the matching timestamp/reason fields: `ACCEPTED` sets `acceptedAt`, `READY` sets `readyAt`, `COMPLETED` sets `completedAt`, `CANCELLED` sets `cancelledBy` (`CUSTOMER`, `ADMIN`, or `SYSTEM`) plus `cancellationReason`, `REJECTED` sets `rejectionReason`, `EXPIRED` sets `cancelledBy: "SYSTEM"` and `cancellationReason: "Cutoff passed"`.
+
+### `GET /api/v1/me/orders` and `GET /admin/v1/orders` — `200 OK`
+
+```json
+{
+  "items": [
+    { "id": "01a1f188-5368-71b6-8350-d06fc674b9f2", "orderNumber": "BB-20261208-0001", "status": "READY", "totalCents": 1000 }
+  ],
+  "total": 1
+}
+```
+
+`items` entries are full `Order` objects; truncated here for brevity. Customer `filter` values: `ALL`, `ACTIVE` (pending/accepted/ready), `COMPLETED`, `CANCELLED` (rejected/cancelled/expired).
+
+### `GET /admin/v1/bake-list?date=2026-12-08` — `200 OK`
+
+```json
+{
+  "bakeDate": "2026-12-08",
+  "generatedAt": "2026-11-18T18:05:00Z",
+  "orderCount": 2,
+  "items": [
+    {
+      "offeringId": "01a1f188-51ce-729f-b78d-5f4ba0d8c21f",
+      "itemName": "Cinnamon Roll",
+      "totalQuantity": 5,
+      "options": [{ "groupName": "Toppings", "optionName": "Icing", "count": 5 }]
+    }
+  ]
+}
+```
+
+### `GET /admin/v1/summary?date=2026-12-08` — `200 OK`
+
+```json
+{
+  "bakeDate": "2026-12-08",
+  "pending": 1,
+  "accepted": 1,
+  "ready": 2,
+  "completed": 0,
+  "unpaid": 3
+}
+```
+
 ## Security checklist
 
-- [ ] Customer can only read/cancel own orders.
-- [ ] Admin endpoints require mTLS + device key + bearer.
-- [ ] No client-supplied totals or prices are trusted.
-- [ ] Option IDs validated against the offering snapshot.
-- [ ] Concurrency counters cannot go negative.
-- [ ] Expiry/release idempotent.
-- [ ] Audit all mutations.
-- [ ] PII limited to order owner/admin.
-- [ ] Rate limit order creation.
+- [x] Customer can only read/cancel own orders — `findByIdAndCustomerId` on both endpoints; cross-customer read and cancel return 404.
+- [x] CSRF double-submit on every customer order mutation — `RequestAuthenticationFilter.requiresCsrf()` covers `/api/v1/orders` and `/api/v1/orders/**`; 403 `CSRF_INVALID` without token.
+- [x] Admin endpoints require mTLS + device key + bearer — `SecurityConfig` `/admin/v1/**` chain; existing S2 device filter.
+- [x] No client-supplied totals or prices are trusted — prices/deltas read from offering snapshots in `OrderPricing`; request DTO has no amount fields.
+- [x] Option IDs validated against the offering snapshot — `OrderPricing.price` checks membership, availability, duplicates, and required/min/max per group.
+- [x] Concurrency counters cannot go negative — conditional reservation updates plus `GREATEST(0, ...)` in `InventoryService.release`.
+- [x] Expiry/release idempotent — conditional status updates and `inventory_released_at IS NULL` claim; verified by repeated job runs.
+- [x] Audit all mutations — `ORDER_*` events plus `ORDER_INVENTORY_RELEASED` on every transition.
+- [x] PII limited to order owner/admin — customer order reads scoped by customer ID; order-list endpoints under `/admin/v1` gated.
+- [x] Rate limit order creation — `RateLimiter` 20/minute per customer on `POST /api/v1/orders` (429 `RATE_LIMITED`).
+- [x] Rate limit order cancellation — `RateLimiter` 20/minute per customer on `POST /api/v1/orders/{id}/cancel`.
+- [x] Free-text reasons not logged — `LoggingOrderEventPublisher` logs order IDs/status only; reason stays in the event for S6.
 
 ## Quality gate
 
@@ -328,6 +437,17 @@ This phase is not complete until `/phase-gate S5` runs and blocking findings are
 
 Quality-gate results belong in the phase PR description.
 
+### S5 gate results
+
+| Agent | Status | Findings | Action |
+|---|---|---|---|
+| `spec-compliance` | PASS (rerun) | B1 duplicate option IDs; B2 `required` with `min=0`; W3–W7 | Fixed: original option list reaches pricing, duplicate rejection before merge, `required` check, page size 20, checklist signed, per-customer row lock, injected `Clock`, test gaps |
+| `lint` | PASS | No lint tooling configured; style warnings on fully-qualified types | Style imports applied via refactor; tooling gap routed to S7 |
+| `refactor` | PASS | FQ types, duplicated quantity aggregation, long `create` method | Imports added; `requireOrderableCustomer` extracted; `quantitiesByOffering` shared; phase suite green |
+| `test-quality` | PASS | Vacuous/weak assertions; 12 unproven acceptance criteria | Tests strengthened; 8 named tests added; all 20 criteria provable; full suite 181 tests green |
+| `security` | PASS (rerun) | Blocker: CSRF missing on order create/cancel; 7 warnings | CSRF added + 403 `CSRF_INVALID` test; cancel rate limit, no reason in logs, `optionIds @Size`, cross-customer cancel test |
+| `gap-analysis` | PASS | V6 duplicate `outbox_event`, missing error codes, W5 blind spot, deferrals | S5/S6/S7/W5 specs and domain model updated; see Accepted gate findings below |
+
 ## Definition of done
 
 All acceptance criteria pass, migration applies, concurrency tests prove no oversell, and W5/W6/A6 can build against the order contract.
@@ -337,3 +457,12 @@ All acceptance criteria pass, migration applies, concurrency tests prove no over
 - S6 implements payment endpoint, notification handling for the event interface, and Venmo instructions from env.
 - S5's local event publisher logs only; no email/SMS/push.
 - S7 load-tests order creation and reviews the reservation SQL.
+
+### Accepted gate findings (non-blocking; owner noted where work remains)
+
+- **Error codes** — order creation returns 409 `MENU_NOT_AVAILABLE` (validation step 1) and 409 `WINDOW_NOT_AVAILABLE` (step 2), plus `OFFERING_NOT_AVAILABLE` (step 4). These codes are recorded in `docs/api/openapi.yaml` and the `docs/specs/README.md` problem-code table. W5 checkout fixtures must handle them (routed to W5).
+- **Audit action label (W8)** — menu/date cancellation is system-driven but audits as `ORDER_CANCELLED_BY_ADMIN` with `ActorType.SYSTEM`; no distinct `ORDER_CANCELLED_BY_SYSTEM` code exists. Accepted for S5; S7 owns the decision to add a distinct audit code and update the code registry/consumers.
+- **Scheduler teardown noise (W9)** — `@EnableScheduling` (added for `OrderExpiryJob`) leaves scheduled tasks active in test contexts, producing connection-refused log lines during Testcontainers teardown. Non-failing; S6 owns profile/property gating for all schedulers (including the S5 expiry job).
+- **Operation IDs (W1)** — the OpenAPI document defines `operationId` for all S5 operations (73 across the document); the warning concerns generated clients not surfacing them. Accepted baseline across phases; S7 OpenAPI validation should assert presence/uniqueness.
+- **Security deferrals** — in-memory `RateLimiter` (single-instance assumption), full stack traces logged by `ApiExceptionHandler` on 500, and `AuditService` `SENSITIVE` regex not covering free-text `reason` are routed to S7 hardening.
+- **Test-quality gaps** — 50-concurrent smoke, fixed-`Clock` expiry, whole-menu cancellation, concurrent same-key idempotency, line-merge rules, additional validation paths, bake-list `REJECTED`/`EXPIRED` exclusion, and outbox `available_at`/exact key are routed to S7 verification.

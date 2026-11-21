@@ -1,8 +1,13 @@
 package com.bethanysbakery.api.api.catalog;
 
+import com.bethanysbakery.api.auth.AuthException;
+import com.bethanysbakery.api.auth.RateLimiter;
 import com.bethanysbakery.api.auth.admin.AdminPrincipal;
+import com.bethanysbakery.api.common.web.ClientIps;
 import com.bethanysbakery.api.catalog.MediaService;
 import com.bethanysbakery.api.catalog.MediaService.MediaAsset;
+import jakarta.servlet.http.HttpServletRequest;
+import java.time.Duration;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import org.springframework.http.CacheControl;
@@ -28,16 +33,24 @@ public class MediaController {
     private static final String CACHE_CONTROL = CacheControl.maxAge(365, TimeUnit.DAYS)
         .cachePublic().immutable().getHeaderValue();
 
-    private final MediaService service;
+    private static final int UPLOAD_LIMIT = 20;
+    private static final Duration UPLOAD_WINDOW = Duration.ofHours(1);
+    private static final int READ_LIMIT = 120;
+    private static final Duration READ_WINDOW = Duration.ofMinutes(1);
 
-    public MediaController(MediaService service) {
+    private final MediaService service;
+    private final RateLimiter rateLimiter;
+
+    public MediaController(MediaService service, RateLimiter rateLimiter) {
         this.service = service;
+        this.rateLimiter = rateLimiter;
     }
 
     @PostMapping(value = "/admin/v1/media", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     public CatalogApi.MediaView upload(@RequestPart("file") MultipartFile file,
             @AuthenticationPrincipal AdminPrincipal principal) {
+        requireRate("media-upload:" + principal.adminId(), UPLOAD_LIMIT, UPLOAD_WINDOW);
         return service.upload(file, principal.adminId());
     }
 
@@ -50,7 +63,9 @@ public class MediaController {
     @GetMapping(value = "/api/v1/media/{mediaId}", produces = "image/webp")
     public ResponseEntity<byte[]> get(@PathVariable UUID mediaId,
             @RequestParam(required = false) Integer size,
-            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch) {
+            @RequestHeader(value = HttpHeaders.IF_NONE_MATCH, required = false) String ifNoneMatch,
+            HttpServletRequest httpRequest) {
+        requireRate("media-read-ip:" + ClientIps.from(httpRequest), READ_LIMIT, READ_WINDOW);
         MediaAsset asset = service.get(mediaId, size);
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(asset.contentType()));
@@ -60,5 +75,12 @@ public class MediaController {
             return ResponseEntity.status(HttpStatus.NOT_MODIFIED).headers(headers).build();
         }
         return ResponseEntity.ok().headers(headers).body(asset.bytes());
+    }
+
+    private void requireRate(String key, int limit, Duration window) {
+        RateLimiter.Result result = rateLimiter.tryAcquire(key, limit, window);
+        if (!result.allowed()) {
+            throw AuthException.rateLimited(result.retryAfterSeconds());
+        }
     }
 }

@@ -50,6 +50,12 @@ public class AdminDevice {
     @Column(name = "app_version")
     private String appVersion;
 
+    @Column(name = "fcm_token")
+    private String fcmToken;
+
+    @Column(name = "fcm_updated_at")
+    private Instant fcmUpdatedAt;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
@@ -86,10 +92,26 @@ public class AdminDevice {
     public Instant getLastSeenAt() { return lastSeenAt; }
     public Instant getRevokedAt() { return revokedAt; }
     public String getAppVersion() { return appVersion; }
+    public String getFcmToken() { return fcmToken; }
+    public Instant getFcmUpdatedAt() { return fcmUpdatedAt; }
+
+    public void setPushToken(String token, Instant now) {
+        this.fcmToken = token;
+        this.fcmUpdatedAt = now;
+        this.updatedAt = now;
+    }
+
+    public void clearPushToken(Instant now) {
+        this.fcmToken = null;
+        this.fcmUpdatedAt = now;
+        this.updatedAt = now;
+    }
 
     public void revoke(Instant now) {
         this.status = AdminDeviceStatus.REVOKED;
         this.revokedAt = now;
+        this.fcmToken = null;
+        this.fcmUpdatedAt = now;
         this.updatedAt = now;
     }
 

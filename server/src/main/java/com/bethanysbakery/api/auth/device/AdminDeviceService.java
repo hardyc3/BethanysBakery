@@ -58,7 +58,7 @@ public class AdminDeviceService {
                 .orElseThrow(() -> AuthException.unauthorized("Unknown device"));
         } else {
             String verified = request.getHeader(config.adminMtlsVerifiedHeader());
-            if (!"true".equalsIgnoreCase(verified)) {
+            if (!("true".equalsIgnoreCase(verified) || "success".equalsIgnoreCase(verified))) {
                 throw AuthException.unauthorized("Client certificate not verified");
             }
             String certificatePem = request.getHeader(config.adminMtlsHeader());
@@ -95,13 +95,33 @@ public class AdminDeviceService {
         AdminDevice device = devices.findById(deviceId)
             .orElseThrow(() -> new AuthException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Device not found"));
         String previous = device.getStatus().name();
+        boolean hadToken = device.getFcmToken() != null;
         if (device.getStatus() != AdminDeviceStatus.REVOKED) {
             device.revoke(Instant.now());
             devices.save(device);
         }
         sessions.revokeDevice(deviceId);
         audit.record(ActorType.ADMIN, actingAdminId, "ADMIN_DEVICE_REVOKED", "ADMIN_DEVICE", deviceId,
-            Map.of("status", previous), Map.of("status", "REVOKED"));
+            Map.of("status", previous, "fcmRegistered", hadToken), Map.of("status", "REVOKED", "fcmRegistered", false));
+    }
+
+    @Transactional
+    public void updatePushToken(UUID deviceId, String token, UUID actingAdminId) {
+        AdminDevice device = devices.findById(deviceId)
+            .orElseThrow(() -> new AuthException(HttpStatus.NOT_FOUND, "NOT_FOUND", "Device not found"));
+        if (device.getStatus() != AdminDeviceStatus.ACTIVE) {
+            throw AuthException.unauthorized("Device revoked");
+        }
+        String value = token == null || token.isBlank() ? null : token.trim();
+        if (value != null && value.length() > 4096) {
+            throw AuthException.badRequest("VALIDATION_ERROR", "Push token is too long");
+        }
+        Instant now = Instant.now();
+        boolean previous = device.getFcmToken() != null;
+        device.setPushToken(value, now);
+        devices.save(device);
+        audit.record(ActorType.ADMIN, actingAdminId, "ADMIN_DEVICE_PUSH_TOKEN_UPDATED", "ADMIN_DEVICE", deviceId,
+            Map.of("fcmRegistered", previous), Map.of("fcmRegistered", value != null));
     }
 
     private void touch(AdminDevice device, String appVersion) {

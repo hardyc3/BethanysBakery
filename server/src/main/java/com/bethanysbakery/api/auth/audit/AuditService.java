@@ -21,6 +21,15 @@ public class AuditService {
     private static final Pattern SENSITIVE = Pattern.compile(
         "(?i).*(password|passwd|token|secret|otp|code|apikey|api_key|authorization|credential).*"
     );
+    private static final Pattern FREE_TEXT_PII = Pattern.compile(
+        "[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"
+            + "|\\+[1-9][0-9]{7,14}"
+            + "|(?i)\\b(api[_-]?key|password|token|secret|otp|authorization)\\b\\s*[:=]?\\s*[A-Za-z0-9+/=_-]{6,}"
+    );
+
+    public static String scrubFreeText(String value) {
+        return value == null ? null : FREE_TEXT_PII.matcher(value).replaceAll("[REDACTED]");
+    }
 
     private final AuditEventRepository repository;
     private final ObjectMapper mapper;
@@ -54,6 +63,11 @@ public class AuditService {
     private Object redact(Object value, String key) {
         if (key != null && SENSITIVE.matcher(key).matches()) {
             return "[REDACTED]";
+        }
+        if (value instanceof String text
+                && (key == null || key.toLowerCase(java.util.Locale.ROOT).contains("reason")
+                    || key.toLowerCase(java.util.Locale.ROOT).contains("notes"))) {
+            return scrubFreeText(text);
         }
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> result = new LinkedHashMap<>();

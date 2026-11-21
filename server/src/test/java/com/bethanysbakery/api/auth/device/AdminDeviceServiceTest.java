@@ -152,7 +152,8 @@ class AdminDeviceServiceTest {
     void bypassRequiresLocalProfileAndExplicitFlag() {
         BakeryProperties bypass = new BakeryProperties(
             "Test", "America/Denver", "addr", "https://maps", "t@example.com", 12,
-            TestProperties.auth(true), new BakeryProperties.AdminApp("1.0.0", "1.0.0", "https://example.com/a", null)
+            TestProperties.auth(true), new BakeryProperties.AdminApp("1.0.0", "1.0.0", "https://example.com/a", null),
+            new BakeryProperties.Venmo(null, null)
         );
         when(devices.findByApiKeyHash(crypto.sha256Hex(API_KEY))).thenReturn(Optional.of(device));
 

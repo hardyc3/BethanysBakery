@@ -19,8 +19,16 @@ public record BakeryProperties(
         @Email(message = "BAKERY_SUPPORT_EMAIL must be valid") String supportEmail,
     @Min(value = 0, message = "ORDER_CUTOFF_HOURS must be >= 0") Integer orderCutoffHours,
     @Valid Auth auth,
-    @Valid AdminApp adminApp
+    @Valid AdminApp adminApp,
+    @Valid Venmo venmo
 ) {
+    public record Venmo(@NotBlank String handle, @NotBlank String displayName) {
+        public Venmo {
+            if (handle == null || handle.isBlank()) handle = "bethanysbakery";
+            if (displayName == null || displayName.isBlank()) displayName = "Bethany's Bakery";
+        }
+    }
+
     public record AdminApp(String latestVersion, String minVersion, String downloadUrl, String releaseNotes) {
         public AdminApp {
             if (latestVersion == null || latestVersion.isBlank()) latestVersion = "1.0.0";

@@ -138,6 +138,7 @@ public class RequestAuthenticationFilter extends OncePerRequestFilter {
         String path = request.getRequestURI();
         // Refresh is cookie-scoped to /api/v1/auth and SameSite=Lax, and the OTP endpoints are
         // pre-session by design; every other customer mutation must present the double-submit pair.
-        return path.equals("/api/v1/auth/logout") || path.equals("/api/v1/me") || path.startsWith("/api/v1/me/");
+        return path.equals("/api/v1/auth/logout") || path.equals("/api/v1/me") || path.startsWith("/api/v1/me/")
+            || path.equals("/api/v1/orders") || path.startsWith("/api/v1/orders/");
     }
 }

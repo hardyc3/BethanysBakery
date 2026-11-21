@@ -51,6 +51,7 @@ Single admin account. Unique constraint on email.
 | status | varchar | ACTIVE, REVOKED |
 | paired_at, last_seen_at, revoked_at | timestamptz | |
 | fcm_token | text | added in S6 |
+| fcm_updated_at | timestamptz | added in S6 |
 | app_version | varchar | last seen |
 | created_at, updated_at | timestamptz | |
 
@@ -468,9 +469,10 @@ One channel attempt.
 | available_at | timestamptz | |
 | processed_at | timestamptz | |
 | last_error | text | |
+| idempotency_key | varchar | nullable; logical-message dedupe key, unique when present |
 | created_at | timestamptz | |
 
-Scheduler polls due `PENDING` rows.
+Scheduler polls due `PENDING` rows. Created in `V5__orders.sql` (S5) so the order transaction can enqueue `OrderCreated`; S6 reuses it and must not re-create it.
 
 ## 3. Relationships
 
@@ -599,12 +601,15 @@ Template edits never change published offerings. Offering edits never change exi
 
 Idempotency keys:
 
-- Menu publish: `menu:{menuId}:published`
-- Reminder: `menu-date:{menuDateId}:reminder:{customerId}`
-- Order event: `order:{orderId}:{eventType}`
+- `OrderCreated`: `order:{orderId}:created` (S5)
+- Menu publish: `MENU_PUBLISHED:{menuId}`
+- Reminder: `ORDER_REMINDER:{menuDateId}:{customerId}`
+- Order events: `<ORDER_EVENT>:<orderId>` (for example `ORDER_READY:<orderId>`)
 - Admin paid order: `order:{orderId}:paid`
-- Admin new order: `order:{orderId}:admin-new`
-- Expiry: `order:{orderId}:expired`
+- Menu/date cancellation: `MENU_CANCELLED:<menuId|menuDateId>:<customerId>`
+- Admin new order: `ADMIN_NEW_ORDER:<orderId>`; fallback `ADMIN_NEW_ORDER_EMAIL:<orderId>`
+
+Authoritative list: `docs/specs/server/S6-notifications-payments.md`.
 
 ## 9. Authorization matrix
 
@@ -638,6 +643,7 @@ Idempotency keys:
 - `notification(status, scheduled_at)`
 - `notification_delivery(notification_id)`
 - `outbox_event(status, available_at)`
+- `outbox_event(idempotency_key)` partial unique where not null (V5)
 - `otp_challenge(destination_hash, created_at)`
 - `refresh_token(token_hash)` unique
 - `admin_device(cert_fingerprint_sha256)` unique

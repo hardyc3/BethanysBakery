@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 @Component
-@Profile("!staging & !prod")
+@Profile({"local", "test"})
 public class LocalOtpSender implements OtpSender {
     private static final Logger log = LoggerFactory.getLogger(LocalOtpSender.class);
     private final ConcurrentHashMap<String, String> lastCodes = new ConcurrentHashMap<>();

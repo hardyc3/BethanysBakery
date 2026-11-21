@@ -47,6 +47,7 @@ Let customers review orders ("My orders"), cancel eligible orders, and manage no
   - explicit consent required; show TCPA-style copy and privacy policy link.
   - SMS toggles disabled until consent and verified phone where required.
   - reflect `smsOptedOut`/STOP state and allow explicit re-consent flow.
+  - `PUT` with `smsConsent=false` revokes server-side consent; send `true` to retain/renew consent, otherwise START cannot clear a prior STOP.
 - `PUT` preferences atomically; show save state/errors and revert to server state on failure.
 - Warn when email/phone unverified.
 

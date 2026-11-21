@@ -1,0 +1,7 @@
+failure-threshold: warning
+
+ignored:
+  # Base images are pinned to explicit tags; apk versions come from the pinned alpine mirror.
+  - DL3018
+  # Multi-stage builds keep only the required runtime files; do not flatten layers.
+  - DL3059

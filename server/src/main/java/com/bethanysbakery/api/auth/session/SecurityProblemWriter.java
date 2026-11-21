@@ -14,6 +14,11 @@ public final class SecurityProblemWriter {
 
     public static void write(HttpServletRequest request, HttpServletResponse response, ObjectMapper mapper,
             HttpStatus status, String code, String detail) throws IOException {
+        write(request, response, mapper, status, code, detail, null);
+    }
+
+    public static void write(HttpServletRequest request, HttpServletResponse response, ObjectMapper mapper,
+            HttpStatus status, String code, String detail, Long retryAfterSeconds) throws IOException {
         Problem body = new Problem(
             "about:blank",
             status.getReasonPhrase(),
@@ -25,6 +30,9 @@ public final class SecurityProblemWriter {
             null
         );
         response.setStatus(status.value());
+        if (retryAfterSeconds != null) {
+            response.setHeader("Retry-After", String.valueOf(retryAfterSeconds));
+        }
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         mapper.writeValue(response.getOutputStream(), body);
     }

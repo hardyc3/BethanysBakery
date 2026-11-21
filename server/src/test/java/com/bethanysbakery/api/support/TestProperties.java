@@ -18,7 +18,8 @@ public final class TestProperties {
             "test@example.com",
             12,
             auth(),
-            new BakeryProperties.AdminApp("1.0.0", "1.0.0", "https://example.com/admin.apk", null)
+            new BakeryProperties.AdminApp("1.0.0", "1.0.0", "https://example.com/admin.apk", null),
+            new BakeryProperties.Venmo(null, null)
         );
     }
 

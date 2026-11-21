@@ -1,0 +1,7 @@
+[(${title})]
+
+[# th:if="${intro}"][(${intro})]
+[/][# th:each="line : ${lines}"][(${line.label})]: [(${line.value})]
+[/][# th:if="${footer}"]
+[(${footer})]
+[/]

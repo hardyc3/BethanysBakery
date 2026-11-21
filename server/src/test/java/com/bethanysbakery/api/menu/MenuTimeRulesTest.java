@@ -19,7 +19,7 @@ class MenuTimeRulesTest {
             "secret", "key", null, null, null, null, null, null, null, null,
             null, null, null, null, null, null, null, "https://public.example.com", null, null);
         BakeryProperties props = new BakeryProperties("Bakery", "America/Denver", "addr", "url",
-            "test@example.com", 12, auth, null);
+            "test@example.com", 12, auth, null, new BakeryProperties.Venmo(null, null));
         rules = new MenuTimeRules(props);
     }
 

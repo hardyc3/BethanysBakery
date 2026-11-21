@@ -30,3 +30,8 @@ bakery:
     admin-max-failed-logins: 5
     admin-lockout: PT15M
     app-public-base-url: https://public.example.com
+  notifications:
+    scheduling-enabled: false
+    admin-alert-email: admin@example.com
+    textbee:
+      webhook-secret: test-webhook-secret
