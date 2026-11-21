@@ -177,6 +177,8 @@ Proposed destination phases are placeholders; create their specs when work start
 | W8 client | Web image for full-stack HTTPS verification; 10 MB proxy cap and security headers | `W8-pwa-hardening.md:195`, `S3:135,164` |
 | A7/A8 client | Remove FCM token registration/push payload handling and edge cert pinning rotation; keep mTLS pairing | This spec, `A8-push-release.md:195-196` |
 | Ops-only | Store bootstrap password/recovery codes off-repo; upload device CA to Cloudflare; verify Proxmox snapshot contains Docker volumes | `S2:290`, `S6:352`, `S7:338` |
+| Ops-only (S8 manual waiver) | Execute and record Cloudflare path-mTLS block/verified-allow, `/admin/v1/devices/pair` exemption + rate-limit, non-US geo 403, external-origin block, and pairing probes. Agent environment cannot reach Cloudflare or the LXC; static config/tests pass, live probes routed to owner before prod cutover. | This spec: AC10, test plan "Manual"; `infra/runbooks/cloudflare-tunnel.md`, `infra/runbooks/cloudflare-mtls-ca.md` |
+| Ops-only (S8 LXC smoke waiver) | On owner LXC, run `git pull` + `docker compose up -d --build`; record api/postgres/web/cloudflared healthy and Proxmox snapshot volume scope. Agent environment verified compose syntax and remaining shell scripts only. | This spec: AC12, DoD; `infra/runbooks/deploy.md` |
 
 ## Definition of done
 

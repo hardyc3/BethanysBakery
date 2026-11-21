@@ -38,8 +38,6 @@ public final class NotificationApi {
 
     public record TextbeeWebhook(String from, String message, String providerMessageId, Instant receivedAt) {}
 
-    public record PushTokenRequest(String token, String appVersion) {}
-
     public static NotificationView view(com.bethanysbakery.api.domain.notification.Notification notification) {
         List<NotificationDeliveryView> deliveries = notification.getDeliveries().stream()
             .map(delivery -> new NotificationDeliveryView(

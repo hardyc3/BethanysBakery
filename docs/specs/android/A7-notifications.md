@@ -165,6 +165,11 @@ Bethany can intentionally send or suppress announcements, reminders, delays, rej
 
 ## Handoff notes
 
-- A8 delivers admin push notifications and deep links into the queue/order detail.
+- S8 removes FCM admin push. New-order/admin alerts are Mailgun email to
+  `ADMIN_ALERT_EMAIL` plus optional Textbee SMS to `ADMIN_ALERT_PHONE`; there is
+  no push token registration or push payload handling.
+- Admin access still uses mTLS device pairing (certificate + API key) over the
+  one hostname. Deep links into the queue/order detail remain a client concern,
+  not a push transport.
 - Message copy lives in server templates; app shows previews only.
 - If resend is added later, update OpenAPI and this spec together.

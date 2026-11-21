@@ -57,7 +57,6 @@ public final class NotificationPayloads {
 
         List<Map<String, Object>> items = new ArrayList<>();
         List<String> summary = new ArrayList<>();
-        List<String> pushSummary = new ArrayList<>();
         for (OrderLine line : order.getLines()) {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("itemName", line.getItemName());
@@ -65,7 +64,6 @@ public final class NotificationPayloads {
             item.put("unitPriceCents", line.getUnitPriceCents());
             item.put("lineTotalCents", line.getLineTotalCents());
             item.put("notes", line.getNotes());
-            pushSummary.add(line.getQuantity() + "x " + line.getItemName());
             List<Map<String, Object>> options = new ArrayList<>();
             List<String> optionNames = new ArrayList<>();
             for (OrderLineOption option : line.getOptions()) {
@@ -84,8 +82,6 @@ public final class NotificationPayloads {
         }
         payload.put("items", items);
         payload.put("itemSummary", String.join(", ", summary));
-        // Push copy must not carry customer-entered notes (spec: no PII beyond first name).
-        payload.put("pushItemSummary", String.join(", ", pushSummary));
         return payload;
     }
 

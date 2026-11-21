@@ -1,16 +1,18 @@
 # Admin password / TOTP / lockout recovery
 
 Prerequisites
-- Operator has DB access via the running stack and read access to `/opt/bethanys-bakery/<env>/.env`.
-- Confirm the request is from the owner; record the ticket ID before changing credentials.
-- Use a paired device for normal access; this runbook is break-glass.
+- Operator has DB access via the running stack and read access to
+  `/opt/bethanys-bakery/.env` (mode 600).
+- Confirm the request is from the owner; record the ticket ID before changing
+  credentials.
+- Use a paired device for normal access; this runbook is break-glass. Owner holds
+  a Proxmox full-container snapshot taken before the change.
 
 Identify the admin
 ```bash
 cd /opt/bethanys-bakery
-ENV=prod
-ENV_FILE=/opt/bethanys-bakery/$ENV/.env
-COMPOSE="docker compose -f infra/compose.$ENV.yml --env-file $ENV_FILE"
+ENV_FILE=/opt/bethanys-bakery/.env
+COMPOSE="docker compose -f infra/compose.prod.yml --env-file $ENV_FILE"
 DB_USER=$(grep '^DB_USER=' "$ENV_FILE" | cut -d= -f2)
 DB_NAME=$(grep '^DB_NAME=' "$ENV_FILE" | cut -d= -f2)
 $COMPOSE exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" \
@@ -34,10 +36,12 @@ $COMPOSE exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" \
 umask 077
 read -rsp 'New admin password (12+ chars): ' ADMIN_BOOTSTRAP_PASSWORD; echo
 export ADMIN_BOOTSTRAP_PASSWORD
-sh infra/scripts/bootstrap-admin.sh "$ENV" admin@cherry-home.com "Bethany"
+sh infra/scripts/bootstrap-admin.sh admin@cherry-home.com "Bethany"
 unset ADMIN_BOOTSTRAP_PASSWORD
 ```
-Store the printed TOTP URI and recovery codes in the owner's password manager. Then pair a new device (`device-pairing.md`) if the old device is lost.
+Store the printed TOTP URI and recovery codes in the owner's password manager.
+Revoking/replacing the device is required if the old device is lost; only one
+admin device may be `ACTIVE` (`device-pairing.md`, `device-revocation.md`).
 
 Rotate TOTP only without changing password (optional)
 ```bash
@@ -56,7 +60,8 @@ $COMPOSE exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" \
   -c "UPDATE admin_user SET totp_secret_encrypted = :'secret', recovery_codes_hash = :'codes'::jsonb, failed_login_count = 0, locked_until = NULL, updated_at = now() WHERE id = :'id'::uuid;"
 rm -f /tmp/admin-recovery-codes.txt
 ```
-Enroll the new base32 secret (`$TOTP_SECRET`) in the authenticator app. Do not print it to logs.
+Enroll the new base32 secret (`$TOTP_SECRET`) in the authenticator app. Do not
+print it to logs.
 
 Verification
 - Admin login with new password/TOTP succeeds; old TOTP/recovery codes fail.
@@ -64,7 +69,11 @@ Verification
 - `ADMIN_BOOTSTRAPPED` audit event exists; owner has the codes.
 
 Rollback
-- If bootstrap fails, re-enable the original admin (`status='ACTIVE'`) and clear lockout; no data is deleted. If TOTP rotation fails, restore `totp_secret_encrypted`/`recovery_codes_hash` from the pre-change backup (`database-restore.md`).
+- If bootstrap fails, re-enable the original admin (`status='ACTIVE'`) and clear
+  lockout; no data is deleted. If TOTP rotation fails, restore the whole LXC
+  from the pre-change Proxmox snapshot and keep the original `.env` value.
+  Never restore only part of a container while changed rows exist.
 
 Notify
-- Owner immediately; security owner + ops on-call for any suspected compromise. Never send secrets or recovery codes over chat/email.
+- Owner immediately; security owner + ops on-call for any suspected compromise.
+  Never send secrets or recovery codes over chat/email.

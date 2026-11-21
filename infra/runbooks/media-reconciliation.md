@@ -4,16 +4,15 @@ Why
 - Uploads write files before the DB commit; `MediaService` cleans up on rollback. A crash after commit but before the `afterCommit` delete can leave files that no `ACTIVE` media row references. Run this sweep manually after incidents and monthly.
 
 Prerequisites
-- `prod` or `staging` stack running; host has `psql` access through the compose network.
+- Production stack running on the LXC; host has `psql` access through the compose network.
 - Media files live in `MEDIA_ROOT=/data/media` inside the `api` container / named volume.
 - Expected keys: `<storageKey>` plus `400.webp`, `800.webp`, `1600.webp` in the same directory for `ACTIVE` media.
 
 Preview (no changes)
 ```bash
 cd /opt/bethanys-bakery
-ENV=prod
-ENV_FILE=/opt/bethanys-bakery/$ENV/.env
-COMPOSE="docker compose -f infra/compose.$ENV.yml --env-file $ENV_FILE"
+ENV_FILE=/opt/bethanys-bakery/.env
+COMPOSE="docker compose -f infra/compose.prod.yml --env-file $ENV_FILE"
 
 $COMPOSE exec -T postgres psql -U "$(grep '^DB_USER=' "$ENV_FILE" | cut -d= -f2)" \
   -d "$(grep '^DB_NAME=' "$ENV_FILE" | cut -d= -f2)" -Atc "
@@ -47,7 +46,8 @@ Verification
 - Audit log shows no new `MEDIA_DELETED` for the swept files (this is a filesystem-only cleanup).
 
 Rollback
-- No DB changes are made. If a file was deleted in error, restore it from the latest restic snapshot (`backup-restore.md`) or re-upload the asset through admin.
+- No DB changes are made. If a file was deleted in error, restore it from a
+  Proxmox full-container snapshot (owner) or re-upload the asset through admin.
 
 Notify
 - Owner + ops on-call before deleting; record count and paths in the ops log.

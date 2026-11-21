@@ -1,6 +1,7 @@
 # S7 — Hardening, Deployment, and Operations
 
-- Status: ready
+- Status: implemented, verification pending
+- Follow-ups: [S8 review follow-up register](S8-review-followups.md#follow-up-register-all-routed-none-implemented-here)
 - Depends on: S6
 - Contract: no new business endpoints; operational and security behavior across the API
 - Next: production readiness

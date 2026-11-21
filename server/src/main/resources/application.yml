@@ -84,6 +84,7 @@ bakery:
     menu-interval-ms: ${NOTIFICATION_MENU_INTERVAL_MS:60000}
     order-expiry-interval-ms: ${ORDER_EXPIRY_INTERVAL_MS:60000}
     admin-alert-email: ${ADMIN_ALERT_EMAIL:}
+    admin-alert-phone: ${ADMIN_ALERT_PHONE:}
     mailgun:
       api-key: ${MAILGUN_API_KEY:}
       domain: ${MAILGUN_DOMAIN:}
@@ -94,6 +95,3 @@ bakery:
       api-key: ${TEXTBEE_API_KEY:}
       device-id: ${TEXTBEE_DEVICE_ID:}
       webhook-secret: ${TEXTBEE_WEBHOOK_SECRET:}
-    fcm:
-      project-id: ${FCM_PROJECT_ID:}
-      service-account-json: ${FCM_SERVICE_ACCOUNT_JSON:}

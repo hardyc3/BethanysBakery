@@ -26,6 +26,8 @@ S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8
 
 S7 can validate the API/Postgres/Cloudflare stack after S6. Full-stack HTTPS verification of the customer web container waits for W8, which owns `web/Dockerfile` and `web/nginx.conf`. S8 records the owner review decisions, the phase-completion audit, and the follow-up register; S9–S12 are planned follow-up phases listed in that register and are not yet specified.
 
+Deferred findings are tracked in the [S8 follow-up register](server/S8-review-followups.md#follow-up-register-all-routed-none-implemented-here). S1–S6 are marked `implemented (follow-ups routed)`, S7 is `implemented, verification pending`, and every phase header links to that register. S8 gate results live in [the S8 gate table](server/S8-review-followups.md#s8-gate-results).
+
 ### Customer web
 
 ```text
@@ -192,8 +194,8 @@ cd android-admin && ./gradlew test
 
 Local profile behavior:
 
-- Mailgun/Textbee/FCM disabled.
-- Emails/SMS/push logged to console.
+- Mailgun/Textbee disabled.
+- Emails/SMS logged to console.
 - OTP codes printed to API logs.
 - Seeded menus and fake customers allowed only in `local`.
 - Cloudflare headers not required.
@@ -207,9 +209,9 @@ Local profile behavior:
 | S3 | `server/S3-catalog-media.md` | Item templates, ingredients, allergens, customizations, image upload |
 | S4 | `server/S4-menus-offerings.md` | Menus, dates, offerings, windows, publish, public menu read |
 | S5 | `server/S5-orders-inventory.md` | Orders, atomic reservation, expiry, cancel/reject, bake list |
-| S6 | `server/S6-notifications-payments.md` | Payment state, Mailgun, Textbee, FCM, outbox, scheduler |
-| S7 | `server/S7-hardening-deploy.md` | Security hardening, deploy, backups, runbooks, e2e/load tests |
-| S8 | `server/S8-review-followups.md` | Owner review: isolation proof, submission timestamps, consent disclosure, single hostname, Mailgun/Textbee admin alerts, minimal LXC ops, follow-up routing |
+| S6 | `server/S6-notifications-payments.md` | Payment state, Mailgun, Textbee, outbox, scheduler (FCM removed in S8) |
+| S7 | `server/S7-hardening-deploy.md` | Security hardening, deploy, runbooks, e2e/load tests (ops simplified in S8) |
+| S8 | `server/S8-review-followups.md` | Owner review: isolation proof, submission timestamps, consent disclosure, single hostname, Mailgun/Textbee admin alerts, minimal LXC ops, [follow-up register](server/S8-review-followups.md#follow-up-register-all-routed-none-implemented-here) |
 | W1 | `web/W1-scaffold.md` | React/Vite scaffold, design system, API client |
 | W2 | `web/W2-auth-profile.md` | OTP login, session, profile, contact verification |
 | W3 | `web/W3-menu-browse.md` | Weekly menu browse: dates/pickup, cutoff, availability, inline basket |
@@ -225,4 +227,4 @@ Local profile behavior:
 | A5 | `android/A5-offerings-windows.md` | Offerings, bake limits/availability, pickup & cutoff/slots |
 | A6 | `android/A6-orders-bake-list.md` | Overview snapshot, pickup orders, payment/ready actions, bake list |
 | A7 | `android/A7-notifications.md` | Publish, reminder, delay, cancel, rejection |
-| A8 | `android/A8-push-release.md` | FCM, update check, signing, release |
+| A8 | `android/A8-push-release.md` | Update check, signing, release (FCM removed in S8) |

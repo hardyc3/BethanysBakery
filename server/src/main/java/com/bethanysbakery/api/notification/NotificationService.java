@@ -11,9 +11,6 @@ import com.bethanysbakery.api.auth.audit.AuditService;
 import com.bethanysbakery.api.config.BakeryProperties;
 import com.bethanysbakery.api.config.NotificationProperties;
 import com.bethanysbakery.api.domain.audit.ActorType;
-import com.bethanysbakery.api.domain.auth.AdminDevice;
-import com.bethanysbakery.api.domain.auth.AdminDeviceRepository;
-import com.bethanysbakery.api.domain.auth.AdminDeviceStatus;
 import com.bethanysbakery.api.domain.auth.Customer;
 import com.bethanysbakery.api.domain.auth.CustomerRepository;
 import com.bethanysbakery.api.domain.notification.Notification;
@@ -26,6 +23,7 @@ import com.bethanysbakery.api.domain.notification.NotificationRepository;
 import com.bethanysbakery.api.domain.notification.NotificationStatus;
 import com.bethanysbakery.api.domain.notification.RecipientType;
 import com.bethanysbakery.api.domain.order.Order;
+import com.bethanysbakery.api.domain.order.OrderRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -66,7 +64,7 @@ public class NotificationService {
     private final NotificationRepository notifications;
     private final NotificationPreferenceRepository preferences;
     private final CustomerRepository customers;
-    private final AdminDeviceRepository devices;
+    private final OrderRepository orders;
     private final AuditService audit;
     private final BakeryProperties bakery;
     private final NotificationProperties properties;
@@ -75,14 +73,13 @@ public class NotificationService {
     private final Environment environment;
 
     public NotificationService(NotificationRepository notifications,
-            NotificationPreferenceRepository preferences, CustomerRepository customers,
-            AdminDeviceRepository devices, AuditService audit,
-            BakeryProperties bakery, NotificationProperties properties, ObjectMapper mapper, Clock clock,
-            Environment environment) {
+            NotificationPreferenceRepository preferences, CustomerRepository customers, OrderRepository orders,
+            AuditService audit, BakeryProperties bakery, NotificationProperties properties, ObjectMapper mapper,
+            Clock clock, Environment environment) {
         this.notifications = notifications;
         this.preferences = preferences;
         this.customers = customers;
-        this.devices = devices;
+        this.orders = orders;
         this.audit = audit;
         this.bakery = bakery;
         this.properties = properties;
@@ -149,22 +146,30 @@ public class NotificationService {
         return enqueueCustomer(customerId, eventType, entityType, entityId, key, payload, scheduledAt, false);
     }
 
-    /** Active-order cancellations are transactional and bypass per-event preferences; SMS consent still applies. */
+    /** Active-order cancellations bypass the event preference unless the customer opted out of everything. */
     @Transactional
     public Notification enqueueCustomer(UUID customerId, NotificationEventType eventType, String entityType,
             UUID entityId, String key, Map<String, Object> payload, Instant scheduledAt,
-            boolean ignorePreferences) {
+            boolean bypassPreferences) {
         Optional<Notification> existing = notifications.findByIdempotencyKey(key);
         if (existing.isPresent()) {
             return existing.get();
         }
         Instant now = clock.instant();
-        Customer customer = customers.findById(customerId).orElse(null);
         Notification notification = new Notification(RecipientType.CUSTOMER,
             customerId, null, eventType, entityType, entityId, key, payload, now,
             scheduledAt == null ? now : scheduledAt);
+        if (hasAllNotificationsDisabled(customerId)) {
+            // An explicit all-off PUT suppresses the row itself, including transactional notices.
+            notification.markSuppressed("ALL_NOTIFICATIONS_DISABLED");
+            return notification;
+        }
+        Customer customer = customers.findById(customerId).orElse(null);
 
-        boolean[] pref = ignorePreferences ? new boolean[] {true, true} : preference(customerId, eventType);
+        boolean[] pref = preference(customerId, eventType);
+        if (bypassPreferences) {
+            pref = new boolean[] {true, true};
+        }
         if (pref[0] && customer != null && customer.isEmailVerified() && customer.getEmail() != null) {
             notification.addDelivery(new NotificationDelivery(notification, NotificationChannel.EMAIL, customer.getEmail()));
         }
@@ -230,34 +235,38 @@ public class NotificationService {
         return notifications.save(notification);
     }
 
+    /** Admin alert is email always and SMS only when ADMIN_ALERT_PHONE is configured. */
     @Transactional
     public Notification enqueueAdminNewOrder(Order order) {
-        Map<String, Object> payload = NotificationPayloads.forOrder(order, appBaseUrl(),
+        Order attached = orders.findById(order.getId()).orElse(order);
+        Map<String, Object> payload = NotificationPayloads.forOrder(attached, appBaseUrl(),
             bakery.venmo().handle(), bakery.venmo().displayName());
-        String key = NotificationKeys.adminNewOrder(order.getId());
+        Notification email = enqueueAdminEmail(NotificationEventType.ADMIN_NEW_ORDER, "ORDER", order.getId(),
+            NotificationKeys.adminNewOrderEmail(order.getId()), payload);
+        if (properties.adminAlertPhoneConfigured()) {
+            enqueueAdminSms(NotificationEventType.ADMIN_NEW_ORDER, "ORDER", order.getId(),
+                NotificationKeys.adminNewOrderSms(order.getId()), payload);
+        }
+        return email;
+    }
+
+    @Transactional
+    public Notification enqueueAdminSms(NotificationEventType eventType, String entityType, UUID entityId,
+            String key, Map<String, Object> payload) {
         Optional<Notification> existing = notifications.findByIdempotencyKey(key);
         if (existing.isPresent()) {
             return existing.get();
         }
         Instant now = clock.instant();
         Notification notification = new Notification(RecipientType.ADMIN,
-            null, null, NotificationEventType.ADMIN_NEW_ORDER, "ORDER", order.getId(), key, payload, now, now);
-        for (AdminDevice device : devices.findAllByStatusAndFcmTokenIsNotNull(AdminDeviceStatus.ACTIVE)) {
-            notification.addDelivery(new NotificationDelivery(notification, NotificationChannel.PUSH,
-                device.getFcmToken()));
-        }
-        if (notification.getDeliveries().isEmpty()) {
-            enqueueAdminFallbackEmail(order);
-            notification.markSuppressed("NO_ACTIVE_FCM_TOKEN");
+            null, null, eventType, entityType, entityId, key, payload, now, now);
+        String destination = properties.adminAlertPhone();
+        if (destination == null || destination.isBlank()) {
+            notification.markSuppressed("ADMIN_SMS_NOT_CONFIGURED");
+        } else {
+            notification.addDelivery(new NotificationDelivery(notification, NotificationChannel.SMS, destination));
         }
         return notifications.save(notification);
-    }
-
-    @Transactional
-    public void enqueueAdminFallbackEmail(Order order) {
-        enqueueAdminEmail(NotificationEventType.ADMIN_NEW_ORDER, "ORDER", order.getId(),
-            NotificationKeys.adminNewOrderEmail(order.getId()),
-            NotificationPayloads.forOrder(order, appBaseUrl(), bakery.venmo().handle(), bakery.venmo().displayName()));
     }
 
     @Transactional(readOnly = true)
@@ -353,9 +362,6 @@ public class NotificationService {
         if (channels.contains(NotificationChannel.SMS) && !properties.textbeeConfigured()) {
             throw AuthException.notConfigured("TEXTBEE is not configured");
         }
-        if (channels.contains(NotificationChannel.PUSH) && !properties.fcmConfigured()) {
-            throw AuthException.notConfigured("FCM is not configured");
-        }
     }
 
     private List<NotificationPreferenceView> customerPreferences(UUID customerId) {
@@ -376,6 +382,20 @@ public class NotificationService {
     public boolean isOptedIn(UUID customerId, NotificationEventType type) {
         boolean[] value = preference(customerId, type);
         return value[0] || value[1];
+    }
+
+    /** Explicit all-off PUT: every customer event must be stored with both channels disabled. */
+    @Transactional(readOnly = true)
+    public boolean hasAllNotificationsDisabled(UUID customerId) {
+        Map<NotificationEventType, NotificationPreference> stored = new EnumMap<>(NotificationEventType.class);
+        preferences.findAllByCustomerId(customerId).forEach(pref -> stored.put(pref.getEventType(), pref));
+        for (NotificationEventType type : customerEvents()) {
+            NotificationPreference pref = stored.get(type);
+            if (pref == null || pref.isEmailEnabled() || pref.isSmsEnabled()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean[] preference(UUID customerId, NotificationEventType type) {
@@ -409,7 +429,7 @@ public class NotificationService {
         }
     }
 
-    private static List<NotificationEventType> customerEvents() {
+    public static List<NotificationEventType> customerEvents() {
         return List.of(NotificationEventType.MENU_PUBLISHED, NotificationEventType.ORDER_REMINDER,
             NotificationEventType.ORDER_ACCEPTED, NotificationEventType.ORDER_READY,
             NotificationEventType.ORDER_DELAYED, NotificationEventType.ORDER_REJECTED,

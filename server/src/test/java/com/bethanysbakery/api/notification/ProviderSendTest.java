@@ -10,7 +10,6 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import com.bethanysbakery.api.config.NotificationProperties;
 import com.bethanysbakery.api.notification.NotificationMessages.DeliveryResult;
 import com.bethanysbakery.api.notification.NotificationMessages.EmailMessage;
-import com.bethanysbakery.api.notification.NotificationMessages.PushMessage;
 import com.bethanysbakery.api.notification.NotificationMessages.SmsMessage;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -23,11 +22,10 @@ class ProviderSendTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
     private final NotificationProperties properties = new NotificationProperties(
-        false, "admin@example.com",
+        false, "admin@example.com", null,
         new NotificationProperties.Mailgun("key-123", "mg.example.com", "https://api.mailgun.net/v3",
             "Bakery <bakery@example.com>"),
-        new NotificationProperties.Textbee("https://sms.example.com", "tb-key", "device-1", "secret"),
-        new NotificationProperties.Fcm("project-1", "{}"));
+        new NotificationProperties.Textbee("https://sms.example.com", "tb-key", "device-1", "secret"));
 
     @Test
     void mailgunSendsFormWithBasicAuthAndParsesMessageId() {
@@ -67,18 +65,10 @@ class ProviderSendTest {
     }
 
     @Test
-    void fcmClassifiesInvalidTokens() {
-        assertThat(FcmPushSender.invalidToken("{\"error\":{\"status\":\"UNREGISTERED\"}}")).isTrue();
-        assertThat(FcmPushSender.invalidToken("{\"error\":{\"status\":\"INVALID_ARGUMENT\"}}")).isTrue();
-        assertThat(FcmPushSender.invalidToken("{\"error\":{\"status\":\"INTERNAL\"}}")).isFalse();
-    }
-
-    @Test
     void localSendersNeverNeedConfiguration() {
         NotificationProperties empty = new NotificationProperties(false, null, null, null, null);
         assertThat(new LocalEmailSender().send(new EmailMessage("a@b.c", "s", "h", "t")).success()).isTrue();
         assertThat(new LocalSmsSender().send(new SmsMessage("+15555550123", "body")).success()).isTrue();
-        assertThat(new LocalPushSender().send(new PushMessage("token", "title", "body")).success()).isTrue();
         assertThat(empty.mailgunConfigured()).isFalse();
     }
 }

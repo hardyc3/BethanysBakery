@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -63,13 +64,22 @@ class ActuatorAndDocsTest {
         expected.put("get-/admin/v1/notifications", "listNotifications");
         expected.put("post-/admin/v1/notifications/{notificationId}/retry", "retryNotification");
         expected.put("post-/api/v1/webhooks/textbee", "receiveTextbeeWebhook");
-        expected.put("put-/admin/v1/devices/{deviceId}/push-token", "updateAdminPushToken");
         expected.put("post-/admin/v1/menu-dates/{menuDateId}/remind", "sendMenuDateReminder");
         expected.forEach((key, operationId) -> {
             String[] parts = key.split("-", 2);
             assertThat(docs.at("/paths/" + jsonPointer(parts[1]) + "/" + parts[0] + "/operationId").asText())
                 .as(key).isEqualTo(operationId);
         });
+    }
+
+    @Test
+    void fcmEndpointsAndSchemasAreAbsent() throws Exception {
+        JsonNode docs = objectMapper.readTree(mvc.perform(get("/v3/api-docs"))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+
+        assertThat(docs.at("/paths/~1admin~1v1~1devices~1{deviceId}~1push-token").isMissingNode()).isTrue();
+        assertThat(docs.at("/components/schemas/PushTokenRequest").isMissingNode()).isTrue();
+        assertThat(docs.toString().toLowerCase(Locale.ROOT)).doesNotContain("fcm", "firebase");
     }
 
     private static String jsonPointer(String path) {
