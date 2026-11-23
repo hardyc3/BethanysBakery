@@ -13,7 +13,7 @@ Implement admin login with email, password, and TOTP/recovery code; secure token
 
 - Menu/catalog screens.
 - Password reset (CLI/admin recovery runbook).
-- FCM registration (A8).
+- FCM registration (removed in S8; A8 no longer registers push tokens).
 - App update checks (A8).
 
 ## Screens
@@ -148,5 +148,5 @@ Admin can log in, stay signed in securely, manage devices, and recover from revo
 ## Handoff notes
 
 - A3 starts after login.
-- A8 adds FCM token registration; device ID is available from secure storage.
+- A8 does not add FCM token registration (removed in S8); device ID remains available from secure storage for mTLS pairing and app-info.
 - If the API adds TOTP enrollment/reset endpoints later, update this spec.

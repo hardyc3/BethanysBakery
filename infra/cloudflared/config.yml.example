@@ -11,6 +11,8 @@
 # WAF, geo, and admin mTLS are path rules owned by the runbooks:
 #   infra/runbooks/cloudflare-tunnel.md
 #   infra/runbooks/cloudflare-mtls-ca.md
+# WAF guard before mTLS: paths starting `/admin/v1` that contain `;` are
+# blocked (403); no extra hostname/ingress, and origin fails closed too.
 tunnel: REPLACE_WITH_TUNNEL_UUID
 credentials-file: /root/.cloudflared/REPLACE_WITH_TUNNEL_UUID.json
 ingress:

@@ -1,9 +1,10 @@
 # Cloudflare mTLS CA, certificate forwarding, and revocation
 
 The mTLS rule is a **path rule on the one public hostname**, not a hostname-wide
-setting. It protects `/admin/v1/**` except `/admin/v1/devices/pair`. Cloudflare
-handles HTTPS certificates; there is no origin cert and no edge cert pinning
-rotation runbook.
+setting. It protects `/admin/v1/**` except `/admin/v1/devices/pair`. Matrix
+variants (`/admin/v1;x/...`) are blocked by the WAF guard before this rule; the
+origin also fails closed on them. Cloudflare handles HTTPS certificates; there
+is no origin cert and no edge cert pinning rotation runbook.
 
 Prerequisites
 - `infra/scripts/generate-ca.sh` already created
@@ -24,11 +25,19 @@ Cloudflare console
 2. Enable Client Certificate Forwarding for that hostname so admin requests
    carry `Cf-Authenticated-Client-Cert` and
    `Cf-Authenticated-Client-Cert-Verified`.
-3. Security → WAF → Custom rules → add:
-   `(starts_with(http.request.uri.path, "/admin/v1/") and http.request.uri.path ne "/admin/v1/devices/pair" and cf.client.cert.verified ne "true")` → **Block** (403).
-   Include the exact `/admin/v1` path in the rule if your WAF does not match it
-   via the prefix. The origin rejects any admin request unless the forwarded
-   cert is verified and its fingerprint matches an `ACTIVE` device.
+3. Security → WAF → Custom rules → add these custom rules in order (one
+   hostname, path-scoped):
+   - `Admin matrix-parameter guard`:
+     `(starts_with(http.request.uri.path, "/admin/v1") and http.request.uri.path contains ";")` → **Block** (403).
+     Place before the mTLS rule; it covers `/admin/v1;x/...` variants that the
+     `/admin/v1/` prefix misses, including matrix forms of the pair path.
+   - `Admin mTLS`:
+     `(starts_with(http.request.uri.path, "/admin/v1/") and http.request.uri.path ne "/admin/v1/devices/pair" and cf.client.cert.verified ne "true")` → **Block** (403).
+   Include the exact `/admin/v1` path in the mTLS rule if your WAF does not
+   match it via the prefix. The origin rejects any admin request unless the
+   forwarded cert is verified and its fingerprint matches an `ACTIVE` device.
+   The origin also fails closed on matrix variants: the admin path filter
+   rejects any `/admin/v1*` path containing `;` before auth/controller dispatch.
 4. `/admin/v1/devices/pair` stays mTLS-exempt and is rate limited at the edge
    (10/IP/15 min, see `cloudflare-tunnel.md`). Exactly one admin device may be
    `ACTIVE`; a second pairing returns 409 `INVALID_STATE`.
@@ -39,6 +48,8 @@ Verification
 ```bash
 curl -sS -o /dev/null -w '%{http_code}\n' \
   https://bakery.cherry-home.com/admin/v1/app-info                  # 403 at edge without cert
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  'https://bakery.cherry-home.com/admin/v1;x/app-info'             # 403 at edge (matrix guard)
 curl -sS -o /dev/null -w '%{http_code}\n' \
   https://bakery.cherry-home.com/admin/v1/devices/pair             # reaches origin (rate limited)
 curl -fsS https://bakery.cherry-home.com/admin/v1/app-info \

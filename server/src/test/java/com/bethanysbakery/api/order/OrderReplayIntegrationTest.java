@@ -250,6 +250,19 @@ class OrderReplayIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
+    void clientSubmittedAtAliasIsStoredVerbatim() throws Exception {
+        Instant client = Instant.parse("2026-11-17T06:07:08.123Z");
+        ObjectNode body = body("alias-key", 1, null, null);
+        body.put("clientSubmittedAt", client.toString());
+
+        MvcResult created = postOrder(buyer.cookie(), body)
+            .andExpect(status().isCreated())
+            .andReturn();
+
+        assertThat(timestamp(id(created), "client_submitted_at")).isEqualTo(client);
+    }
+
+    @Test
     void concurrentSameKeyCreatesProduceOneOrderAndOneReplay() throws Exception {
         var executor = Executors.newFixedThreadPool(2);
         var start = new CountDownLatch(1);

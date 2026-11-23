@@ -24,6 +24,12 @@ Console setup
 5. Security → WAF → Managed rules: Cloudflare Managed Ruleset and OWASP Core
    Ruleset in blocking mode.
 6. Security → WAF → Custom rules (all on the one hostname):
+   - `Admin matrix-parameter guard` (place before the mTLS rule in
+     `cloudflare-mtls-ca.md`):
+     `(starts_with(http.request.uri.path, "/admin/v1") and http.request.uri.path contains ";")` → **Block** (403).
+     Blocks `/admin/v1;x/...` variants that the `/admin/v1/` mTLS prefix misses,
+     including matrix forms of the pair path. Origin also fails closed on these
+     variants.
    - `US customer API only`:
      `(starts_with(http.request.uri.path, "/api/v1/") and not starts_with(http.request.uri.path, "/api/v1/webhooks/") and ip.geoip.country ne "US")` → **Block** (403).
      `/api/v1/webhooks/textbee` stays unauthenticated at the edge and is
@@ -60,6 +66,8 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
   https://bakery.cherry-home.com/api/v1/config                       # 403 when CF-IPCountry missing
 curl -sS -o /dev/null -w '%{http_code}\n' -H 'CF-IPCountry: US' -H 'Origin: https://evil.example' \
   https://bakery.cherry-home.com/api/v1/auth/csrf                    # 403, no CORS
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  'https://bakery.cherry-home.com/admin/v1;x/app-info'              # 403 edge matrix guard
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST \
   https://bakery.cherry-home.com/api/v1/webhooks/textbee \
   -H 'Content-Type: application/json' -H 'X-Textbee-Signature: bad' --data '{}'   # 401 at origin, not geo-blocked

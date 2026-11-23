@@ -81,15 +81,47 @@ class AdminAccessIntegrationTest extends IntegrationTestBase {
             .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
     }
 
-    @Test
-    void revokedDeviceIsUnauthorizedOnAdminEndpoints() throws Exception {
-        var admin = seedAdmin("access-admin@example.com", "correct horse battery staple", List.of());
-        var device = seedDevice(admin.id(), "access-device-key", "Revoked");
+    @ParameterizedTest
+    @MethodSource("adminEndpoints")
+    void revokedDeviceIsUnauthorizedOnAdminEndpoints(String method, String path) throws Exception {
+        var admin = seedAdmin("revoked-" + UUID.randomUUID() + "@example.com",
+            "correct horse battery staple", List.of());
+        var device = seedDevice(admin.id(), "revoked-device-key-" + UUID.randomUUID(), "Revoked");
         adminDevices.revoke(device.id(), admin.id());
 
-        mvc.perform(get("/admin/v1/orders").header("X-Device-Key", device.apiKey()))
+        mvc.perform(request(HttpMethod.valueOf(method), path).header("X-Device-Key", device.apiKey()))
             .andExpect(status().isUnauthorized())
             .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    void customerCookieOnPairEndpointIsForbiddenBeforeController() throws Exception {
+        Cookie cookie = customerCookie("pair-customer-" + UUID.randomUUID() + "@example.com");
+        String body = """
+            {"pairingCode":"not-a-code","deviceName":"Pair Probe",
+             "publicKeyPem":"public-key","csrPem":"csr"}
+            """;
+
+        mvc.perform(post("/admin/v1/devices/pair")
+                .cookie(cookie)
+                .header("CF-Connecting-IP", "10.7.0.2")
+                .contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void validAdminDeviceWithCustomerCookieIsForbidden() throws Exception {
+        var admin = seedAdmin("device-cookie-" + UUID.randomUUID() + "@example.com",
+            "correct horse battery staple", List.of());
+        var device = seedDevice(admin.id(), "device-cookie-key-" + UUID.randomUUID(), "Cookie Device");
+        Cookie cookie = customerCookie("device-cookie-customer-" + UUID.randomUUID() + "@example.com");
+
+        mvc.perform(get("/admin/v1/app-info")
+                .header("X-Device-Key", device.apiKey())
+                .cookie(cookie))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value("FORBIDDEN"));
     }
 
     @Test

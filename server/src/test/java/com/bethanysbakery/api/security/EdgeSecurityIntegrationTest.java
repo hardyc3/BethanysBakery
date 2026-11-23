@@ -48,7 +48,7 @@ class EdgeSecurityIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void adminHostIsExemptFromCountryCheck() throws Exception {
+    void adminPathIsExemptFromCountryCheck() throws Exception {
         mvc.perform(get("/admin/v1/app-info").header("X-Device-Key", "unknown"))
             .andExpect(status().isUnauthorized())
             .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));

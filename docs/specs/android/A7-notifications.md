@@ -11,7 +11,7 @@ Give Bethany control over customer notifications and visibility into delivery fa
 
 ## Non-goals
 
-- Push transport and FCM client (A8).
+- Push transport and FCM client (removed in S8; no A8 push client).
 - Customer preference editing (W7).
 - Marketing campaigns.
 - Editing message templates in the app.
