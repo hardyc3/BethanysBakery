@@ -65,22 +65,28 @@ app/
   - pairing code
 - QR payload:
   ```json
-  {"v":1,"pairUrl":"https://bakery-pair.cherry-home.com","apiUrl":"https://bakery-admin-api.cherry-home.com","code":"..."}
+  {"v":1,"pairUrl":"https://bakery.cherry-home.com/admin/v1/devices/pair","apiUrl":"https://bakery.cherry-home.com/admin/v1","code":"..."}
   ```
-- Validate URL scheme/host allowlist:
-  - Release requires `https` and an exact host match against the build-time `APP_PAIR_URL` and `APP_ADMIN_API_URL` allowlist.
+  S8 removed the separate `bakery-pair.cherry-home.com` and
+  `bakery-admin-api.cherry-home.com` hostnames. Both URLs now use
+  `bakery.cherry-home.com`; pairing stays at `/admin/v1/devices/pair` and admin
+  API calls stay under `/admin/v1` with mTLS after pairing.
+- Validate URL scheme/host/path allowlist:
+  - Release requires `https` and exact match against build-time `APP_PAIR_URL`
+    and `APP_ADMIN_API_URL` on the one hostname.
   - The QR `pairUrl` must equal the configured `APP_PAIR_URL`; the QR `apiUrl` must equal the configured `APP_ADMIN_API_URL`. No other hosts, ports, or paths are accepted.
-  - Build config injects both hosts; they are not editable at runtime.
+  - Build config injects both exact URLs; they are not editable at runtime.
   - Debug may additionally allow `http://10.0.2.2:<port>` and a documented LAN host from a debug-only list.
-  - Reject userinfo, fragments, non-default ports in release, and any host not on the allowlist.
+  - Reject userinfo, fragments, non-default ports in release, and any host or path not on the allowlist.
 - Reject unknown `v`.
 
 ### Key and certificate
 
 - Generate EC P-256 keypair in Android Keystore, non-exportable.
 - Build a PKCS#10 CSR with BouncyCastle using the Keystore key.
-- POST `pairUrl` + `/admin/v1/devices/pair`:
+- POST `pairUrl` (the mTLS-exempt pairing endpoint):
   - `pairingCode`, `deviceName` (default `Build.MODEL`), `publicKeyPem`, `csrPem`, `appVersion`.
+  - Subsequent `/admin/v1` calls use the installed client certificate.
 - Response:
   - `deviceId`
   - `apiKey`
@@ -151,7 +157,7 @@ app/
 ## Acceptance criteria
 
 - Given a valid pairing QR, when scanned, then the app pairs, stores the certificate/key/API key, and shows the post-pairing screen.
-- Given a QR `pairUrl` or `apiUrl` whose host is not on the build-time allowlist, then it is rejected before any network call.
+- Given a QR `pairUrl` or `apiUrl` whose host or path is not on the build-time allowlist, then it is rejected before any network call.
 - Given an invalid/expired code, then a clear error is shown and no credentials are stored.
 - Given a malformed QR, then it is rejected without a network call.
 - Given a release build with an `http` URL, then pairing is rejected.

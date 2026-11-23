@@ -2,6 +2,7 @@ package com.bethanysbakery.api.notification;
 
 import com.bethanysbakery.api.domain.notification.NotificationEventType;
 import com.bethanysbakery.api.notification.NotificationMessages.EmailMessage;
+import com.bethanysbakery.api.notification.NotificationMessages.PushMessage;
 import com.bethanysbakery.api.notification.NotificationMessages.SmsMessage;
 import java.util.ArrayList;
 import java.util.List;
@@ -10,7 +11,7 @@ import java.util.Map;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 
-/** Renders one logical notification to email (HTML + text) and SMS. */
+/** Renders one logical notification to email (HTML + text) and SMS; legacy push formatting stays read-only. */
 public final class NotificationTemplates {
 
     private static final int SMS_LIMIT = 320;
@@ -67,6 +68,34 @@ public final class NotificationTemplates {
             default -> BAKERY + ": update on " + number + ".";
         };
         return new SmsMessage(to, truncate(body));
+    }
+
+    /** Legacy S7 shape for historical rows only; rendering never triggers a send. */
+    public PushMessage renderPush(NotificationEventType type, Map<String, Object> payload) {
+        String number = str(payload.get("orderNumber"), "");
+        String firstName = str(payload.get("firstName"), "");
+        if (firstName.isBlank()) {
+            String fullName = str(payload.get("customerName"), "");
+            firstName = fullName.isBlank() ? "there" : fullName.trim().split("\\s+")[0];
+        }
+        String title = switch (type) {
+            case ADMIN_NEW_ORDER -> "New order " + number;
+            case ORDER_READY -> "Order " + number + " ready";
+            case ORDER_ACCEPTED -> "Order " + number + " accepted";
+            case ORDER_REJECTED, ORDER_CANCELLED, ORDER_EXPIRED, ORDER_DELAYED -> "Order " + number + " update";
+            default -> BAKERY;
+        };
+        String body = "Hi " + firstName + ", "
+            + switch (type) {
+                case ADMIN_NEW_ORDER -> "your order " + number + ": "
+                    + str(payload.get("pushItemSummary"), "New order") + " · "
+                    + str(payload.get("totalDisplay"), "");
+                case ORDER_READY -> "your order " + number + " is ready for pickup.";
+                case ORDER_ACCEPTED -> "your order " + number + " was accepted. Pay via @"
+                    + str(payload.get("venmoHandle"), "") + ".";
+                default -> "there is an update on order " + number + ".";
+            };
+        return new PushMessage(str(payload.get("token"), ""), title, body);
     }
 
     private String subject(NotificationEventType type, Map<String, Object> payload) {

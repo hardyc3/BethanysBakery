@@ -20,7 +20,7 @@ import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** Sends due deliveries through providers and applies suppression/retry rules. */
+/** Sends due email/SMS deliveries; legacy PUSH rows are suppressed, never sent. */
 @Service
 public class NotificationDispatchService {
 
@@ -61,6 +61,10 @@ public class NotificationDispatchService {
         String lastError = null;
         for (NotificationDelivery delivery : notification.getDeliveries()) {
             if (delivery.getStatus() != NotificationStatus.QUEUED) {
+                continue;
+            }
+            if (delivery.getChannel() == NotificationChannel.PUSH) {
+                delivery.markSuppressed("PUSH_RETIRED");
                 continue;
             }
             if (delivery.getChannel() == NotificationChannel.SMS && smsSuppressed(notification, delivery)) {
@@ -145,6 +149,7 @@ public class NotificationDispatchService {
                 delivery.getDestination()));
             case SMS -> smsSender.send(templates.renderSms(notification.getEventType(), payload,
                 delivery.getDestination()));
+            case PUSH -> DeliveryResult.failed("PUSH_RETIRED");
         };
     }
 

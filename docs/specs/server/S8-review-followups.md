@@ -183,6 +183,7 @@ Proposed destination phases are placeholders; create their specs when work start
 | S9 | Remove dead `application-staging.yml` and residual `staging` profile branches (`@Profile({"staging","prod"})`, `ProductionConfigValidator`, `ApiExceptionHandler`) once owner confirms no staging activation is needed; S8 removed staging compose/deploy but deliberately left profile code intact. | S8 security gate warning; `server/src/main/resources/application-staging.yml`, `ProviderOtpSender.java:18`, `ProductionConfigValidator.java:15` |
 | S9 | Local profile logs OTP plaintext by design (`docs/specs/README.md` local behavior) — confirm `LocalOtpSender` cannot activate under `prod` and add the guard to the S7 checklist sign-off. | S8 security gate warning; `S6-notifications-payments.md:27`, `S7-hardening-deploy.md:60`, `docs/specs/README.md:195-201` |
 | Process (closed) | Initial `/phase-gate S8` `spec-compliance` blockers fixed; formal rerun completed with PASS. No process item remains. | S8 gate results table above |
+| Process (accepted) | Commit `cd41fb9` uses a non-Conventional subject (`phase8`). Owner chose to keep local hashes unchanged; `5ae0c5b` and later commits follow Conventional Commits. | `docs/specs/README.md` commit-style rule; code-review Standards axis |
 
 ## Definition of done
 

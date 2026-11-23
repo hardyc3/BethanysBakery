@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.bethanysbakery.api.config.NotificationTemplateConfig;
 import com.bethanysbakery.api.domain.notification.NotificationEventType;
 import com.bethanysbakery.api.notification.NotificationMessages.EmailMessage;
+import com.bethanysbakery.api.notification.NotificationMessages.PushMessage;
 import com.bethanysbakery.api.notification.NotificationMessages.SmsMessage;
 import java.util.List;
 import java.util.Map;
@@ -55,6 +56,17 @@ class NotificationTemplatesTest {
         SmsMessage sms = templates.renderSms(NotificationEventType.ORDER_READY,
             Map.of("orderNumber", "BB-1", "firstName", "Alice", "mapsUrl", "https://public.example.com/orders/1"));
         assertThat(sms.body()).contains("BB-1", "https://public.example.com/orders/1").hasSizeLessThan(320);
+    }
+
+    @Test
+    void legacyPushFormattingRemainsAvailableWithoutASender() {
+        PushMessage push = templates.renderPush(NotificationEventType.ADMIN_NEW_ORDER,
+            Map.of("orderNumber", "BB-1", "customerName", "Alice Smith",
+                "customerEmail", "alice@example.com", "customerPhone", "+15555550123"));
+
+        assertThat(push.title()).contains("BB-1");
+        assertThat(push.body()).contains("BB-1", "Alice").doesNotContain("alice@example.com", "+15555550123");
+        assertThat(push.data()).isEmpty();
     }
 
     @Test
