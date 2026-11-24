@@ -9,15 +9,15 @@ info:
     - Customer web uses HttpOnly access/refresh cookies plus `X-CSRF-Token`.
     - Admin app uses bearer tokens, a device API key (`X-Device-Key`), and a
       Cloudflare-validated mTLS client certificate.
-    - Admin device pairing happens on a separate non-mTLS hostname.
+    - One public hostname. Cloudflare enforces path-scoped mTLS on `/admin/v1/**`,
+      with `/admin/v1/devices/pair` exempt from mTLS at the edge; admin endpoints
+      still require the device API key and origin checks.
     - All instants are ISO-8601 UTC. Bake dates are `YYYY-MM-DD` in America/Denver.
     - Money is integer USD cents.
     - Errors use RFC 9457 Problem Details with a stable `code`.
 servers:
   - url: https://bakery.cherry-home.com
-    description: Customer web and public/customer API
-  - url: https://bakery-admin-api.cherry-home.com
-    description: Admin API (mTLS + device key)
+    description: Single public hostname for web, `/api/v1/**`, and `/admin/v1/**` (path-scoped mTLS)
   - url: http://localhost:8080
     description: Local development
 tags:
@@ -281,6 +281,11 @@ paths:
       tags: [Customer]
       operationId: getNotificationPreferences
       summary: Customer notification preferences
+      description: >-
+        All-off state means every one of the nine events has `emailEnabled: false` and
+        `smsEnabled: false`. It suppresses ALL customer notifications, including the
+        active-order `MENU_CANCELLED` notices that previously bypassed preferences.
+        `ORDER_PAID` is an admin message and is unaffected. In-app status remains available.
       security: [{ customerCookie: [] }]
       responses:
         '200':
@@ -292,6 +297,11 @@ paths:
       tags: [Customer]
       operationId: updateNotificationPreferences
       summary: Update notification preferences and SMS consent
+      description: >-
+        An explicit all-off PUT persists `false` for every event and channel. That suppresses
+        ALL customer notifications, including active-order `MENU_CANCELLED` notices; the
+        `ORDER_PAID` admin email is unaffected. In-app status remains available. The public
+        config `noneSelectedMessage` copy describes exactly what the customer gives up.
       security: [{ customerCookie: [] }]
       requestBody:
         required: true
@@ -328,6 +338,11 @@ paths:
       tags: [Customer]
       operationId: createOrder
       summary: Create an order for one pickup window
+      description: >-
+        First create returns 201; any replay with the same `idempotency_key` returns 200 with
+        the original order whether or not the payload fingerprint matches. No price or total
+        fields are accepted from the client. `client_submitted_at` is a diagnostic-only client
+        timestamp; it never affects validation, cutoff, expiry, status, stock, or totals.
       security: [{ customerCookie: [] }]
       requestBody:
         required: true
@@ -408,9 +423,12 @@ paths:
       operationId: pairAdminDevice
       summary: Pair a new Android device using a one-time code
       description: |
-        Served on the non-mTLS pairing hostname only. The server verifies the
-        one-time code, signs the CSR with the device CA, stores the API key hash,
-        and returns the client certificate and API key once.
+        Served on the single public hostname; `/admin/v1/devices/pair` is the path exempt
+        from Cloudflare mTLS (other `/admin/v1/**` paths require a verified client cert).
+        The server verifies the one-time code, signs the CSR with the device CA, stores
+        the API key hash, and returns the client certificate and API key once. A second
+        pairing attempt while one device is ACTIVE returns 409 with code INVALID_STATE;
+        revoke the active device first.
       requestBody:
         required: true
         content:
@@ -424,6 +442,13 @@ paths:
               schema: { $ref: '#/components/schemas/PairDeviceResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: >-
+            INVALID_STATE — an ACTIVE admin device already exists. Revoke it before pairing
+            another; the existing device stays paired. No new Problem code.
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
 
   /admin/v1/auth/login:
@@ -524,22 +549,6 @@ paths:
       security: [{ adminBearer: [], deviceApiKey: [] }]
       parameters:
         - { name: deviceId, in: path, required: true, schema: { type: string, format: uuid } }
-      responses:
-        '204': { $ref: '#/components/responses/NoContent' }
-
-  /admin/v1/devices/{deviceId}/push-token:
-    put:
-      tags: [Admin Devices]
-      operationId: updateAdminPushToken
-      summary: Register or clear the device FCM token
-      security: [{ adminBearer: [], deviceApiKey: [] }]
-      parameters:
-        - { name: deviceId, in: path, required: true, schema: { type: string, format: uuid } }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/PushTokenRequest' }
       responses:
         '204': { $ref: '#/components/responses/NoContent' }
 
@@ -1399,7 +1408,7 @@ components:
 
     PublicConfig:
       type: object
-      required: [bakeryName, timezone, pickupAddress, mapsUrl, supportEmail]
+      required: [bakeryName, timezone, pickupAddress, mapsUrl, supportEmail, notificationOptions]
       properties:
         bakeryName: { type: string }
         timezone: { type: string, example: America/Denver }
@@ -1407,6 +1416,35 @@ components:
         mapsUrl: { type: string, format: uri }
         supportEmail: { type: string, format: email }
         orderCutoffHours: { type: integer, example: 12 }
+        notificationOptions: { $ref: '#/components/schemas/PublicNotificationOptions' }
+    PublicNotificationOptions:
+      type: object
+      description: Server-owned notification choices and exact opt-out disclosure for clients.
+      required: [events, noneSelectedMessage]
+      properties:
+        events:
+          type: array
+          description: One entry per notification event type; the nine existing events.
+          items: { $ref: '#/components/schemas/NotificationEventOption' }
+        noneSelectedMessage:
+          type: string
+          description: >-
+            Server-owned copy. Clients render this verbatim when every event and channel is off;
+            it lists all nine events and the SMS verification/STOP caveat.
+          example: >-
+            If you turn off all notifications, you will not receive any email or text message about:
+            new weekly menus, reminders before baking day, order accepted, order ready, order delayed,
+            order rejected, order cancelled, order expired, or a cancelled menu/date. You can still
+            open the app any time to check your orders, payment status, and pickup details. Text
+            messages also require phone verification and are stopped if you reply STOP.
+    NotificationEventOption:
+      type: object
+      description: Per-event channel availability reported to the client; not a preference setting.
+      required: [eventType, emailAvailable, smsAvailable]
+      properties:
+        eventType: { $ref: '#/components/schemas/NotificationEventType' }
+        emailAvailable: { type: boolean, description: True when the email provider is configured. }
+        smsAvailable: { type: boolean, description: True only when the SMS provider is configured. }
 
     CsrfToken:
       type: object
@@ -1598,6 +1636,18 @@ components:
           type: [string, 'null']
           maxLength: 128
           description: Client-generated key for safe retries. Reusing a key returns the existing order for the same customer.
+        client_submitted_at:
+          type: [string, 'null']
+          format: date-time
+          description: >-
+            Optional client-generated ISO-8601 Instant for duplicate-order diagnosis only.
+            Past and skewed-future values are accepted, stored verbatim, and logged with the
+            server-received time; the value never affects business ordering. `clientSubmittedAt`
+            is accepted as an alias with identical meaning.
+        clientSubmittedAt:
+          type: [string, 'null']
+          format: date-time
+          description: Alias for `client_submitted_at`; diagnostic-only client timestamp, accepted with identical semantics.
         items:
           type: array
           minItems: 1
@@ -1815,13 +1865,6 @@ components:
         pairedAt: { type: string, format: date-time }
         lastSeenAt: { type: [string, 'null'], format: date-time }
         revokedAt: { type: [string, 'null'], format: date-time }
-        appVersion: { type: [string, 'null'] }
-        fcmRegistered: { type: boolean }
-    PushTokenRequest:
-      type: object
-      required: [token]
-      properties:
-        token: { type: [string, 'null'] }
         appVersion: { type: [string, 'null'] }
     AdminAppInfo:
       type: object

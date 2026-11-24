@@ -127,17 +127,17 @@ Canonical fingerprint input: menu date ID, pickup window ID, trimmed order notes
 
 ## Security checklist
 
-- [ ] One active admin device enforced at DB and service level; revocation immediate.
-- [ ] mTLS required on `/admin/v1/**` except `/admin/v1/devices/pair`; origin still checks cert fingerprint.
-- [ ] Customer isolation proven for every order/preference endpoint; admin endpoints deny customers.
-- [ ] No client timestamp or fingerprint can change order state, totals, or stock.
-- [ ] Replay audit contains no secrets, full emails, full phone numbers, or free-text reasons.
-- [ ] Full opt-out suppresses all customer messages, including previously exempt notices.
-- [ ] Admin phone/email destinations masked in API and logs.
-- [ ] No FCM credentials, tokens, or service-account JSON in repo/env/runtime.
-- [ ] Cloudflare handles HTTPS certificates; no origin cert or ACME artifacts.
-- [ ] Secrets still mode `600` and gitignored; US geo rule and origin check verified.
-- [ ] Proxmox backup scope verified to include Docker volumes; secrets recoverable by owner.
+- [x] One active admin device enforced at DB and service level; revocation immediate. Evidence: `V8__review-followups.sql`, `DevicePairingService`, `AdminDeviceService`, `DevicePairingIntegrationTest`.
+- [x] mTLS required on `/admin/v1/**` except `/admin/v1/devices/pair`; origin still checks cert fingerprint. Evidence: path-scoped Cloudflare rules + matrix guard in `infra/runbooks/cloudflare-mtls-ca.md` and `cloudflare-tunnel.md`; origin check in `RequestAuthenticationFilter`/`AdminDeviceService`. Live probe waived below.
+- [x] Customer isolation proven for every order/preference endpoint; admin endpoints deny customers. Evidence: `OrderIntegrationTest`, `OrderReplayIntegrationTest`, `NotificationIntegrationTest`, `AdminAccessIntegrationTest` (customer cookie denied on all admin paths, incl. matrix variants).
+- [x] No client timestamp or fingerprint can change order state, totals, or stock. Evidence: `RequestFingerprint`, `OrderService`, `RequestFingerprintTest`, `OrderReplayIntegrationTest`; fields are diagnostic-only.
+- [x] Replay audit contains no secrets, full emails, full phone numbers, or free-text reasons. Evidence: `OrderService.replayAuditPayload`, `OrderReplayAuditPayloadTest`.
+- [x] Full opt-out suppresses all customer messages, including previously exempt notices. Evidence: `NotificationService`, `NotificationIntegrationTest`; `ORDER_PAID` admin email retained.
+- [x] Admin phone/email destinations masked in API and logs. Evidence: `NotificationApi.Mask`, `NotificationServiceAdminAlertTest`, sender tests.
+- [x] No FCM credentials, tokens, or service-account JSON in repo/env/runtime. Evidence: code/config/OpenAPI scans clean; dead DB columns routed to S10.
+- [x] Cloudflare handles HTTPS certificates; no origin cert or ACME artifacts. Evidence: one-hostname tunnel/deploy docs; no origin cert config retained.
+- [x] Secrets still mode `600` and gitignored; US geo rule and origin check verified. Evidence: `infra/setup-alpine.sh`, `.gitignore`, `EdgeSecurityIntegrationTest`; live geo/origin probe waived below.
+- [x] Proxmox backup scope verified to include Docker volumes; secrets recoverable by owner. Evidence: owner-scoped waiver below; in-repo backup/restore tooling removed.
 
 ## Quality gate
 
@@ -147,12 +147,12 @@ Canonical fingerprint input: menu date ID, pickup window ID, trimmed order notes
 
 | Agent | Status | Findings | Action |
 |---|---|---|---|
-| `spec-compliance` | PENDING | | |
-| `lint` | PENDING | | |
-| `refactor` | PENDING | | |
-| `test-quality` | PENDING | | |
-| `security` | PENDING | | |
-| `gap-analysis` | PENDING | | |
+| `spec-compliance` | PASS | Reran S8 gate on `cd41fb9` + uncommitted fixes. AC103–AC115, D1–D10, test plan, signed security checklist, DoD, follow-up register, explicit manual waivers, and all prior blocker resolutions verified. Latest suite: 56 suites / 337 tests / 0 failures / 0 errors / 0 skipped; Spectral clean; shell harness PASS=8 SKIP=1. Live Cloudflare/LXC/Proxmox probes remain routed Ops-only waivers. | No blocking findings; process register item closed. |
+| `lint` | PASS | — | — |
+| `refactor` | PASS | — | — |
+| `test-quality` | PASS | 337 tests green, including new matrix-path and customer-on-admin regression tests. | — |
+| `security` | PASS (warnings routed) | Encoded `%3b` / dot-slash / double-slash path variants (origin 404, no leak); local-profile plaintext OTP log; dead `application-staging.yml`; live Cloudflare/LXC/Proxmox probes waived. | First three added to the follow-up register below; probes already routed to the Ops-only waiver rows. |
+| `gap-analysis` | PASS | Future-spec FCM drift (A8 body + A1/A2/A7 references); unrecorded gate results; three unregistered security warnings. | Rewrote FCM-void sections in `A8-push-release.md`, clarified A1/A2 non-goals/handoff; added register rows and filled this table. No blocking gaps remain. |
 
 ## Follow-up register (all routed, none implemented here)
 
@@ -177,6 +177,13 @@ Proposed destination phases are placeholders; create their specs when work start
 | W8 client | Web image for full-stack HTTPS verification; 10 MB proxy cap and security headers | `W8-pwa-hardening.md:195`, `S3:135,164` |
 | A7/A8 client | Remove FCM token registration/push payload handling and edge cert pinning rotation; keep mTLS pairing | This spec, `A8-push-release.md:195-196` |
 | Ops-only | Store bootstrap password/recovery codes off-repo; upload device CA to Cloudflare; verify Proxmox snapshot contains Docker volumes | `S2:290`, `S6:352`, `S7:338` |
+| Ops-only (S8 manual waiver) | Execute and record Cloudflare path-mTLS block/verified-allow, `/admin/v1/devices/pair` exemption + rate-limit, non-US geo 403, external-origin block, and pairing probes. Agent environment cannot reach Cloudflare or the LXC; static config/tests pass, live probes routed to owner before prod cutover. | This spec: AC10, test plan "Manual"; `infra/runbooks/cloudflare-tunnel.md`, `infra/runbooks/cloudflare-mtls-ca.md` |
+| Ops-only (S8 LXC smoke waiver) | On owner LXC, run `git pull` + `docker compose up -d --build`; record api/postgres/web/cloudflared healthy and Proxmox snapshot volume scope. Agent environment verified compose syntax and remaining shell scripts only. | This spec: AC12, DoD; `infra/runbooks/deploy.md` |
+| S9 edge hardening | Decode-safe path checks for encoded `%3b`, dot-slash and double-slash variants. Origin fails closed today (404/no leak) for `/admin/v1;x/**` via `RequestAuthenticationFilter`, but the raw `;` guard and Cloudflare `contains ";"`, `/api/v1/` WAF prefixes do not match encoded forms. Align edge and origin rules and add a probe; do not treat as an auth bypass in S8. | S8 security gate warning; `RequestAuthenticationFilter.java:59-65`, `EdgeRequestFilter.java:36-37`, `infra/runbooks/cloudflare-mtls-ca.md:28-36` |
+| S9 | Remove dead `application-staging.yml` and residual `staging` profile branches (`@Profile({"staging","prod"})`, `ProductionConfigValidator`, `ApiExceptionHandler`) once owner confirms no staging activation is needed; S8 removed staging compose/deploy but deliberately left profile code intact. | S8 security gate warning; `server/src/main/resources/application-staging.yml`, `ProviderOtpSender.java:18`, `ProductionConfigValidator.java:15` |
+| S9 | Local profile logs OTP plaintext by design (`docs/specs/README.md` local behavior) — confirm `LocalOtpSender` cannot activate under `prod` and add the guard to the S7 checklist sign-off. | S8 security gate warning; `S6-notifications-payments.md:27`, `S7-hardening-deploy.md:60`, `docs/specs/README.md:195-201` |
+| Process (closed) | Initial `/phase-gate S8` `spec-compliance` blockers fixed; formal rerun completed with PASS. No process item remains. | S8 gate results table above |
+| Process (accepted) | Commit `cd41fb9` uses a non-Conventional subject (`phase8`). Owner chose to keep local hashes unchanged; `5ae0c5b` and later commits follow Conventional Commits. | `docs/specs/README.md` commit-style rule; code-review Standards axis |
 
 ## Definition of done
 

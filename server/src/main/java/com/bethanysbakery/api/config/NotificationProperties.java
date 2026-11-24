@@ -9,9 +9,9 @@ import org.springframework.validation.annotation.Validated;
 public record NotificationProperties(
     boolean schedulingEnabled,
     String adminAlertEmail,
+    String adminAlertPhone,
     Mailgun mailgun,
-    Textbee textbee,
-    Fcm fcm
+    Textbee textbee
 ) {
 
     public record Mailgun(String apiKey, String domain, String apiBase, String from) {
@@ -22,8 +22,6 @@ public record NotificationProperties(
 
     public record Textbee(String baseUrl, String apiKey, String deviceId, String webhookSecret) {}
 
-    public record Fcm(String projectId, String serviceAccountJson) {}
-
     public boolean mailgunConfigured() {
         return mailgun != null && has(mailgun.apiKey()) && has(mailgun.domain()) && has(mailgun.from());
     }
@@ -32,8 +30,8 @@ public record NotificationProperties(
         return textbee != null && has(textbee.baseUrl()) && has(textbee.apiKey()) && has(textbee.deviceId());
     }
 
-    public boolean fcmConfigured() {
-        return fcm != null && has(fcm.projectId()) && has(fcm.serviceAccountJson());
+    public boolean adminAlertPhoneConfigured() {
+        return has(adminAlertPhone);
     }
 
     public boolean webhookSecretConfigured() {

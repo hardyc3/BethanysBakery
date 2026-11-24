@@ -44,6 +44,12 @@ public class Order {
     @Column(name = "idempotency_key")
     private String idempotencyKey;
 
+    @Column(name = "client_submitted_at")
+    private Instant clientSubmittedAt;
+
+    @Column(name = "request_fingerprint", length = 64)
+    private String requestFingerprint;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderStatus status;
@@ -151,6 +157,8 @@ public class Order {
     public MenuDate getMenuDate() { return menuDate; }
     public PickupWindow getPickupWindow() { return pickupWindow; }
     public String getIdempotencyKey() { return idempotencyKey; }
+    public Instant getClientSubmittedAt() { return clientSubmittedAt; }
+    public String getRequestFingerprint() { return requestFingerprint; }
     public OrderStatus getStatus() { return status; }
     public PaymentStatus getPaymentStatus() { return paymentStatus; }
     public String getPaymentMethod() { return paymentMethod; }

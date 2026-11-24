@@ -26,6 +26,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
+import org.springframework.web.util.ServletRequestPathUtils;
 
 public class RequestAuthenticationFilter extends OncePerRequestFilter {
     public static final String DEVICE_ATTRIBUTE = "auth.adminDevice";
@@ -53,15 +54,38 @@ public class RequestAuthenticationFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        String path = request.getRequestURI();
+        // Tomcat keeps ';' in requestURI while Spring strips it from the lookup path. Fail closed before
+        // auth or routing: a path-parameter variant must never reach an admin controller.
+        String rawPath = relativeRawPath(request);
+        if (rawPath.startsWith("/admin/v1") && rawPath.indexOf(';') >= 0) {
+            SecurityProblemWriter.write(request, response, mapper, HttpStatus.FORBIDDEN,
+                "FORBIDDEN", "Access denied");
+            return;
+        }
+        String path = ServletRequestPathUtils.parseAndCache(request).pathWithinApplication().value();
         try {
-            if (path.startsWith("/admin/v1/")) {
-                if (!path.equals("/admin/v1/devices/pair")) {
-                    authenticateAdmin(request);
+            if (isAdminPath(path)) {
+                // AC104: any authenticated customer is forbidden on every admin path, even with a device.
+                if (authenticateCustomer(request)) {
+                    SecurityProblemWriter.write(request, response, mapper, HttpStatus.FORBIDDEN,
+                        "FORBIDDEN", "Access denied");
+                    return;
+                }
+                AuthException adminFailure = null;
+                boolean pairPath = path.equals("/admin/v1/devices/pair");
+                if (!pairPath) {
+                    try {
+                        authenticateAdmin(request, path);
+                    } catch (AuthException ex) {
+                        adminFailure = ex;
+                    }
+                }
+                if (adminFailure != null) {
+                    throw adminFailure;
                 }
             } else {
                 authenticateCustomer(request);
-                if (requiresCsrf(request) && !csrfService.validate(request)) {
+                if (requiresCsrf(request, path) && !csrfService.validate(request)) {
                     SecurityProblemWriter.write(request, response, mapper, HttpStatus.FORBIDDEN, "CSRF_INVALID",
                         "CSRF token missing or invalid");
                     return;
@@ -74,7 +98,13 @@ public class RequestAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private void authenticateAdmin(HttpServletRequest request) {
+    private static String relativeRawPath(HttpServletRequest request) {
+        String uri = request.getRequestURI();
+        String contextPath = request.getContextPath();
+        return uri.startsWith(contextPath) ? uri.substring(contextPath.length()) : uri;
+    }
+
+    private void authenticateAdmin(HttpServletRequest request, String path) {
         AdminDevice device = deviceService.authenticate(request);
         request.setAttribute(DEVICE_ATTRIBUTE, device);
 
@@ -82,9 +112,9 @@ public class RequestAuthenticationFilter extends OncePerRequestFilter {
         if (authorization == null || !authorization.startsWith("Bearer ")) {
             return;
         }
-        boolean bearerOptional = request.getRequestURI().equals("/admin/v1/auth/login")
-            || request.getRequestURI().equals("/admin/v1/auth/refresh")
-            || request.getRequestURI().equals("/admin/v1/app-info");
+        boolean bearerOptional = path.equals("/admin/v1/auth/login")
+            || path.equals("/admin/v1/auth/refresh")
+            || path.equals("/admin/v1/app-info");
         JwtService.AccessClaims claims;
         try {
             claims = jwtService.parse(authorization.substring(7), SubjectType.ADMIN);
@@ -110,32 +140,38 @@ public class RequestAuthenticationFilter extends OncePerRequestFilter {
         SecurityContextHolder.getContext().setAuthentication(authentication);
     }
 
-    private void authenticateCustomer(HttpServletRequest request) {
+    /** Returns true when a valid customer session was installed on the security context. */
+    private boolean authenticateCustomer(HttpServletRequest request) {
         String accessToken = cookies.read(request, CookieService.ACCESS_COOKIE);
         if (accessToken == null) {
-            return;
+            return false;
         }
         try {
             JwtService.AccessClaims claims = jwtService.parse(accessToken, SubjectType.CUSTOMER);
             Optional<Customer> customer = customers.findById(claims.subjectId());
             if (customer.isEmpty() || customer.get().getStatus() != CustomerStatus.ACTIVE) {
-                return;
+                return false;
             }
             CustomerPrincipal principal = new CustomerPrincipal(claims.subjectId(), claims.sessionId());
             var authentication = new UsernamePasswordAuthenticationToken(principal, null,
                 List.of(new SimpleGrantedAuthority("ROLE_CUSTOMER")));
             SecurityContextHolder.getContext().setAuthentication(authentication);
+            return true;
         } catch (AuthException ignored) {
             // Invalid or expired cookie: continue as anonymous. Authorization returns 401 if required.
+            return false;
         }
     }
 
-    private static boolean requiresCsrf(HttpServletRequest request) {
+    private static boolean isAdminPath(String path) {
+        return path.equals("/admin/v1") || path.startsWith("/admin/v1/");
+    }
+
+    private static boolean requiresCsrf(HttpServletRequest request, String path) {
         String method = request.getMethod();
         if (!List.of("POST", "PUT", "PATCH", "DELETE").contains(method)) {
             return false;
         }
-        String path = request.getRequestURI();
         // Refresh is cookie-scoped to /api/v1/auth and SameSite=Lax, and the OTP endpoints are
         // pre-session by design; every other customer mutation must present the double-submit pair.
         return path.equals("/api/v1/auth/logout") || path.equals("/api/v1/me") || path.startsWith("/api/v1/me/")

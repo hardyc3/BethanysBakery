@@ -113,6 +113,10 @@ Quality-gate results belong in the phase PR description.
 
 ## Handoff notes
 
+- S8: render `notificationOptions` from `GET /api/v1/config`; use the server-owned
+  `noneSelectedMessage` verbatim in the all-off state. An explicit all-off choice
+  suppresses every customer message, including active-order menu cancellations;
+  in-app status remains available.
 - Coordinate toggle-to-event mapping with S6/W6 so labels match domain events.
 - Refunds remain manual.
 - Keep preference labels aligned with enums once mapping is finalized.

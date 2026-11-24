@@ -143,6 +143,10 @@ Checkout matches design: basket review, pickup time choice, customer details, Ve
 
 ## Handoff notes
 
+- S8: send optional `client_submitted_at` on order create for diagnosis only, and
+  generate a fresh idempotency key after the user edits the basket. Same-key
+  replay still returns the original order with `200`; the client timestamp never
+  changes validation, cutoff, or stock.
 - Post-order confirmation, Venmo deep link/copy details, pickup address reveal, and status live in W6.
 - Slot granularity must align with server pickup-window model; update OpenAPI/domain if finer-grained slots are required.
 - Keep design copy tone consistent ("Save your slice", small-batch/manual payment).

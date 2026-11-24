@@ -1,7 +1,7 @@
 # Bethany's Bakery — Domain Model
 
 Status: approved baseline  
-Last updated: 2026-11-14
+Last updated: 2026-11-20
 
 ## 1. Conventions
 
@@ -50,10 +50,12 @@ Single admin account. Unique constraint on email.
 | api_key_hash | text | random 256-bit, hashed |
 | status | varchar | ACTIVE, REVOKED |
 | paired_at, last_seen_at, revoked_at | timestamptz | |
-| fcm_token | text | added in S6 |
-| fcm_updated_at | timestamptz | added in S6 |
+| fcm_token | text | dead in S8; removal routed to S10 |
+| fcm_updated_at | timestamptz | dead in S8; removal routed to S10 |
 | app_version | varchar | last seen |
 | created_at, updated_at | timestamptz | |
+
+At most one device may be `ACTIVE` (`uq_admin_device_single_active`, §10). Revoking the active device frees the slot; a second pairing attempt returns 409 `INVALID_STATE`.
 
 #### `device_pairing`
 
@@ -125,13 +127,15 @@ Indexes: destination hash + created_at, expires_at.
 | id | uuid | PK |
 | actor_type | varchar | ADMIN, CUSTOMER, SYSTEM |
 | actor_id | uuid | nullable |
-| action | varchar | e.g. ORDER_ACCEPTED |
+| action | varchar | e.g. ORDER_ACCEPTED, ORDER_IDEMPOTENCY_REPLAY |
 | entity_type | varchar | |
 | entity_id | uuid | |
 | before_json | jsonb | redacted |
 | after_json | jsonb | redacted |
 | request_id | varchar | |
 | created_at | timestamptz | append-only |
+
+`ORDER_IDEMPOTENCY_REPLAY` is the S8 replay-diagnosis audit action. It records `payloadChanged` (`false` for an identical fingerprint, `true` when the same key carries a different fingerprint), the incoming `clientSubmittedAt`, and the server-received time. It is an observability row only: replay keeps `201` for first create and `200` for every replay, with no order-state change and no business audit event.
 
 ### 2.2 Catalog
 
@@ -322,6 +326,8 @@ Snapshot of a customization group at offering creation, editable independently o
 | menu_date_id | uuid | FK |
 | pickup_window_id | uuid | FK |
 | idempotency_key | varchar | nullable, unique when present; prevents duplicate order creation on retries |
+| client_submitted_at | timestamptz | nullable; optional web-generated submission time, stored verbatim (S8 diagnostic only) |
+| request_fingerprint | varchar(64) | nullable; lowercase SHA-256 hex of canonical request (S8 diagnostic only) |
 | status | varchar | PENDING, ACCEPTED, READY, COMPLETED, REJECTED, CANCELLED, EXPIRED |
 | payment_status | varchar | UNPAID, PAID |
 | payment_method | varchar | nullable: VENMO, CASH, OTHER |
@@ -341,6 +347,8 @@ Snapshot of a customization group at offering creation, editable independently o
 | inventory_released_at | timestamptz | nullable; idempotent release marker |
 | version | int | |
 | created_at, updated_at | timestamptz | |
+
+`client_submitted_at` and `request_fingerprint` are diagnostic-only observability signals. The client timestamp is stored verbatim, including past or skewed future values; neither field affects ordering, cutoff, expiry, totals, stock, order numbers, or which order is authoritative. The server's `createdAt` and `idempotency_key` remain authoritative. Same-key replay returns the original order: `201` on first create, `200` on every replay, with no new rows, counters, outbox rows, or business audit events.
 
 #### `order_line`
 
@@ -447,13 +455,15 @@ One channel attempt.
 |---|---|---|
 | id | uuid | PK |
 | notification_id | uuid | FK |
-| channel | varchar | EMAIL, SMS, PUSH |
+| channel | varchar | EMAIL, SMS |
 | destination | varchar | redacted in logs |
 | status | varchar | QUEUED, SENT, FAILED, SUPPRESSED |
 | provider_message_id | varchar | |
 | attempts | int | |
 | last_error | text | |
 | sent_at | timestamptz | |
+
+Historical `PUSH` rows may exist from S6; FCM/push was removed in S8, with dead `admin_device` columns routed for removal in S10.
 
 #### `outbox_event`
 
@@ -596,8 +606,10 @@ Template edits never change published offerings. Offering edits never change exi
 | `ORDER_CANCELLED` | Order customer | Customer/admin/system cancels | Email, SMS if consented |
 | `ORDER_EXPIRED` | Order customer | Cutoff expiry | Email |
 | `MENU_CANCELLED` | Opted-in customers + active order customers | Menu/date cancel | Email, SMS if consented |
-| `ORDER_PAID` (admin bake trail) | Admin (`ADMIN_ALERT_EMAIL`) | Order payment marked `PAID` | Email with full bake/fulfillment order details; durable paper trail |
-| Admin new order | Admin | Order created | FCM + email fallback |
+| `ORDER_PAID` (admin bake trail) | Admin (`ADMIN_ALERT_EMAIL`) | Order payment marked `PAID` | Email with full bake/fulfillment order details; durable paper trail; unchanged in S8 |
+| Admin new order | Admin (`ADMIN_ALERT_EMAIL`) | Order created | Email always (`ADMIN_NEW_ORDER_EMAIL:<orderId>`); optional SMS to `ADMIN_ALERT_PHONE` (`ADMIN_NEW_ORDER_SMS:<orderId>`) when set |
+
+FCM/push was removed in S8; `ORDER_PAID` email remains mandatory and unchanged.
 
 Idempotency keys:
 
@@ -607,7 +619,9 @@ Idempotency keys:
 - Order events: `<ORDER_EVENT>:<orderId>` (for example `ORDER_READY:<orderId>`)
 - Admin paid order: `order:{orderId}:paid`
 - Menu/date cancellation: `MENU_CANCELLED:<menuId|menuDateId>:<customerId>`
-- Admin new order: `ADMIN_NEW_ORDER:<orderId>`; fallback `ADMIN_NEW_ORDER_EMAIL:<orderId>`
+- Admin new order email (always): `ADMIN_NEW_ORDER_EMAIL:<orderId>`
+- Admin new order SMS (optional, when `ADMIN_ALERT_PHONE` is set): `ADMIN_NEW_ORDER_SMS:<orderId>`
+- The S6 `ADMIN_NEW_ORDER:<orderId>` push key was removed with FCM in S8.
 
 Authoritative list: `docs/specs/server/S6-notifications-payments.md`.
 
@@ -648,5 +662,6 @@ Authoritative list: `docs/specs/server/S6-notifications-payments.md`.
 - `refresh_token(token_hash)` unique
 - `admin_device(cert_fingerprint_sha256)` unique
 - `admin_device(api_key_hash)` unique
+- `uq_admin_device_single_active`: unique on `admin_device ((status))` where `status = 'ACTIVE'` (V8)
 - Partial unique indexes for non-null customer email and phone
 - Check constraints for enums, positive quantities, non-negative counters

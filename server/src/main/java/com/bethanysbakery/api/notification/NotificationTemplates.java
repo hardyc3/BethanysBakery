@@ -11,7 +11,7 @@ import java.util.Map;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 
-/** Renders one logical notification to email (HTML + text), SMS, and push. */
+/** Renders one logical notification to email (HTML + text) and SMS; legacy push formatting stays read-only. */
 public final class NotificationTemplates {
 
     private static final int SMS_LIMIT = 320;
@@ -64,11 +64,13 @@ public final class NotificationTemplates {
                     : ": " + str(payload.get("cancellationReason"), "") + ".");
             case ORDER_EXPIRED -> "Order " + number + " expired before cutoff. Order again at "
                 + str(payload.get("menuUrl"), "");
+            case ADMIN_NEW_ORDER -> "New order " + number + ". Details: " + str(payload.get("mapsUrl"), "");
             default -> BAKERY + ": update on " + number + ".";
         };
         return new SmsMessage(to, truncate(body));
     }
 
+    /** Legacy S7 shape for historical rows only; rendering never triggers a send. */
     public PushMessage renderPush(NotificationEventType type, Map<String, Object> payload) {
         String number = str(payload.get("orderNumber"), "");
         String firstName = str(payload.get("firstName"), "");

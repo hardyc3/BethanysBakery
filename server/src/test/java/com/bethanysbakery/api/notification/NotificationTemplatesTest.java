@@ -52,16 +52,21 @@ class NotificationTemplatesTest {
     }
 
     @Test
-    void smsIsShortAndPushHasNoPii() {
+    void smsIsShort() {
         SmsMessage sms = templates.renderSms(NotificationEventType.ORDER_READY,
             Map.of("orderNumber", "BB-1", "firstName", "Alice", "mapsUrl", "https://public.example.com/orders/1"));
         assertThat(sms.body()).contains("BB-1", "https://public.example.com/orders/1").hasSizeLessThan(320);
+    }
 
+    @Test
+    void legacyPushFormattingRemainsAvailableWithoutASender() {
         PushMessage push = templates.renderPush(NotificationEventType.ADMIN_NEW_ORDER,
             Map.of("orderNumber", "BB-1", "customerName", "Alice Smith",
                 "customerEmail", "alice@example.com", "customerPhone", "+15555550123"));
+
         assertThat(push.title()).contains("BB-1");
         assertThat(push.body()).contains("BB-1", "Alice").doesNotContain("alice@example.com", "+15555550123");
+        assertThat(push.data()).isEmpty();
     }
 
     @Test

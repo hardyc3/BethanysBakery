@@ -1,24 +1,28 @@
-# Token-only setup is the S7 default: compose passes the tunnel token with
+# Token-only setup is the default: compose passes the tunnel token with
 # `cloudflared tunnel run --token ...`; no config file is mounted into the
-# container. This file documents the routes the named tunnel must have.
+# container. This file documents the ingress routes the named tunnel must have.
 #
-# Create/verify the tunnel routes from the Cloudflare dashboard or with:
+# One public hostname only. Path prefixes select the origin service:
+#   /admin/v1 -> api:8080   /api -> api:8080   / -> web:80
+#
+# Create/verify the tunnel DNS route from the Cloudflare dashboard or with:
 #   cloudflared tunnel route dns <tunnel-uuid> bakery.cherry-home.com
-#   cloudflared tunnel route dns <tunnel-uuid> bakery-admin-api.cherry-home.com
-#   cloudflared tunnel route dns <tunnel-uuid> bakery-pair.cherry-home.com
 #
-# Staging uses the matching *-staging hostnames and its own tunnel token.
-#
-# WAF, geo blocking, cache rules, HSTS, and admin mTLS are OWNED BY RUNBOOKS,
-# not by this file. See infra/runbooks/cloudflare-tunnel.md,
-# cloudflare-cache.md, and cloudflare-mtls-ca.md.
+# WAF, geo, and admin mTLS are path rules owned by the runbooks:
+#   infra/runbooks/cloudflare-tunnel.md
+#   infra/runbooks/cloudflare-mtls-ca.md
+# WAF guard before mTLS: paths starting `/admin/v1` that contain `;` are
+# blocked (403); no extra hostname/ingress, and origin fails closed too.
 tunnel: REPLACE_WITH_TUNNEL_UUID
 credentials-file: /root/.cloudflared/REPLACE_WITH_TUNNEL_UUID.json
 ingress:
   - hostname: bakery.cherry-home.com
+    path: /admin/v1
+    service: http://api:8080
+  - hostname: bakery.cherry-home.com
+    path: /api
+    service: http://api:8080
+  - hostname: bakery.cherry-home.com
+    path: /
     service: http://web:80
-  - hostname: bakery-admin-api.cherry-home.com
-    service: http://api:8080
-  - hostname: bakery-pair.cherry-home.com
-    service: http://api:8080
   - service: http_status:404

@@ -86,7 +86,14 @@ public class NotificationOrderEventPublisher implements com.bethanysbakery.api.o
                 optedInCustomers.add(customer.getId());
             }
         }
+        Set<UUID> fullyOptedOut = new HashSet<>();
+        for (UUID customerId : activeOrderCustomers) {
+            if (notifications.hasAllNotificationsDisabled(customerId)) {
+                fullyOptedOut.add(customerId);
+            }
+        }
         Set<UUID> recipients = new HashSet<>(activeOrderCustomers);
+        recipients.removeAll(fullyOptedOut);
         recipients.addAll(optedInCustomers);
         Map<String, Object> payload = NotificationPayloads.forMenuCancelled("MENU_DATE", date.getId(),
             date.getBakeDate(), baseUrl());
@@ -95,7 +102,7 @@ public class NotificationOrderEventPublisher implements com.bethanysbakery.api.o
             outbox.write("MENU_DATE", date.getId(), "MENU_CANCELLED",
                 Map.of("menuDateId", date.getId().toString(), "customerId", customerId.toString()),
                 key, now);
-            // Active orders are transactional notices; opted-in-only recipients follow preferences.
+            // Active orders bypass the event preference; an explicit all-off PUT removes the recipient.
             boolean activeOrder = activeOrderCustomers.contains(customerId);
             notifications.enqueueCustomer(customerId, NotificationEventType.MENU_CANCELLED, "MENU_DATE",
                 date.getId(), key, payload, now, activeOrder);

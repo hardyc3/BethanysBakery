@@ -31,4 +31,5 @@ openssl req -new -x509 -sha256 -key "$CA_KEY" -out "$CA_CRT" -days 3650 \
 
 chmod 600 "$CA_KEY" "$CA_CRT"
 printf 'generate-ca: created %s and %s\n' "$CA_KEY" "$CA_CRT"
-printf 'generate-ca: upload %s to Cloudflare mTLS for the admin API hostname\n' "$CA_CRT"
+printf 'generate-ca: upload %s to Cloudflare mTLS for the one public hostname\n' "$CA_CRT"
+printf 'generate-ca: edge rule is path-scoped to /admin/v1/** except /admin/v1/devices/pair\n'

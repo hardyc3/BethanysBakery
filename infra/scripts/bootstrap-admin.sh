@@ -11,27 +11,20 @@ die() {
 }
 
 usage() {
-    printf 'Usage: ADMIN_BOOTSTRAP_PASSWORD=<12+ chars> %s [prod|staging] <email> <name>\n' "$0" >&2
+    printf 'Usage: ADMIN_BOOTSTRAP_PASSWORD=<12+ chars> %s <email> <name>\n' "$0" >&2
 }
-
-ENVIRONMENT=prod
-if [ "$#" -gt 0 ]; then
-    case $1 in
-        prod|staging) ENVIRONMENT=$1; shift ;;
-    esac
-fi
 
 [ "$#" -eq 2 ] || { usage; die "email and name are required"; }
 email=$1
 name=$2
 
-ENV_FILE=${ENV_FILE:-/opt/bethanys-bakery/$ENVIRONMENT/.env}
-COMPOSE_FILE=$INFRA_DIR/compose.$ENVIRONMENT.yml
+ENV_FILE=${ENV_FILE:-/opt/bethanys-bakery/.env}
+COMPOSE_FILE=$INFRA_DIR/compose.prod.yml
 [ -f "$ENV_FILE" ] || die "missing env file: $ENV_FILE"
 export ENV_FILE
 
 pg_cid=$(docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" ps -q postgres | head -n 1)
-[ -n "$pg_cid" ] || die "postgres is not running; deploy $ENVIRONMENT first"
+[ -n "$pg_cid" ] || die "postgres is not running; deploy the LXC stack first"
 
 if [ -n "${ADMIN_BOOTSTRAP_PASSWORD:-}" ]; then
     [ "${#ADMIN_BOOTSTRAP_PASSWORD}" -ge 12 ] \

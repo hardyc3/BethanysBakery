@@ -1,6 +1,7 @@
 # S6 — Payments and Notifications
 
-- Status: ready
+- Status: implemented (follow-ups routed)
+- Follow-ups: [S8 review follow-up register](S8-review-followups.md#follow-up-register-all-routed-none-implemented-here)
 - Depends on: S5
 - Contract: `docs/api/openapi.yaml` → payment endpoint, notification preferences, Admin Notifications
 - Next: S7

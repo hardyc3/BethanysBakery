@@ -10,6 +10,7 @@ public final class NotificationMessages {
 
     public record SmsMessage(String to, String body) {}
 
+    /** Legacy S7 formatting shape only; no provider or sender is wired for PUSH. */
     public record PushMessage(String token, String title, String body, Map<String, String> data) {
         public PushMessage(String token, String title, String body) {
             this(token, title, body, Map.of());

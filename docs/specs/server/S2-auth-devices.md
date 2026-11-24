@@ -1,6 +1,7 @@
 # S2 — Authentication, Accounts, and Admin Devices
 
-- Status: ready
+- Status: implemented (follow-ups routed)
+- Follow-ups: [S8 review follow-up register](S8-review-followups.md#follow-up-register-all-routed-none-implemented-here)
 - Depends on: S1
 - Contract: `docs/api/openapi.yaml` → Customer Auth, Customer profile, Admin Auth, Admin Devices, Admin System audit
 - Next: S3

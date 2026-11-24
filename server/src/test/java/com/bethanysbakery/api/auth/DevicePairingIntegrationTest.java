@@ -15,6 +15,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -43,7 +48,8 @@ class DevicePairingIntegrationTest extends IntegrationTestBase {
         assertThat(body.get("caCertificatePem").asText()).contains("BEGIN CERTIFICATE");
         assertThat(Instant.parse(body.get("certificateExpiresAt").asText())).isAfter(Instant.now());
 
-        pairExpecting(401, "10.3.0.2", pairingCode, "Pixel 8", material);
+        // One active device is now the invariant: a second pairing is rejected before code reuse is checked.
+        pairExpecting(409, "10.3.0.2", pairingCode, "Pixel 8", material);
 
         MvcResult login = mvc.perform(post("/admin/v1/auth/login")
                 .header("X-Device-Key", apiKey)
@@ -68,6 +74,135 @@ class DevicePairingIntegrationTest extends IntegrationTestBase {
         assertThat(jdbc.queryForObject(
             "select count(*) from audit_event where action = 'ADMIN_DEVICE_PAIRED'", Integer.class))
             .isEqualTo(1);
+    }
+
+    @Test
+    void secondPairingWhileOneActiveDeviceExistsIsConflictAndRevocationAllowsPairing() throws Exception {
+        SeededAdmin admin = seedAdmin("single-device@example.com", PASSWORD, List.of());
+        JsonNode first = objectMapper.readTree(pair("10.4.0.1", pairingService.createPairingCode("test"),
+            "First", CsrTestSupport.ecP256("First")).getResponse().getContentAsString());
+        String apiKey = first.get("apiKey").asText();
+        UUID firstDeviceId = UUID.fromString(first.get("deviceId").asText());
+
+        MvcResult conflict = pair("10.4.0.2", pairingService.createPairingCode("test"),
+            "Second", CsrTestSupport.ecP256("Second"));
+        assertThat(conflict.getResponse().getStatus()).isEqualTo(409);
+        assertThat(objectMapper.readTree(conflict.getResponse().getContentAsString()).get("code").asText())
+            .isEqualTo("INVALID_STATE");
+
+        MvcResult login = mvc.perform(post("/admin/v1/auth/login")
+                .header("X-Device-Key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "email", "single-device@example.com",
+                    "password", PASSWORD,
+                    "totpCode", currentTotpCode(admin.totpSecret())))))
+            .andExpect(status().isOk())
+            .andReturn();
+        String accessToken = objectMapper.readTree(login.getResponse().getContentAsString())
+            .get("accessToken").asText();
+        mvc.perform(get("/admin/v1/devices")
+                .header("Authorization", "Bearer " + accessToken)
+                .header("X-Device-Key", apiKey))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.length()").value(1));
+
+        mvc.perform(delete("/admin/v1/devices/{deviceId}", firstDeviceId)
+                .header("Authorization", "Bearer " + accessToken)
+                .header("X-Device-Key", apiKey))
+            .andExpect(status().isNoContent());
+
+        MvcResult afterRevokeResult = pair("10.4.0.3", pairingService.createPairingCode("test"),
+            "After revoke", CsrTestSupport.ecP256("After revoke"));
+        assertThat(afterRevokeResult.getResponse().getStatus()).isEqualTo(201);
+        JsonNode afterRevoke = objectMapper.readTree(afterRevokeResult.getResponse().getContentAsString());
+        String newApiKey = afterRevoke.get("apiKey").asText();
+        MvcResult oldKeyRejected = mvc.perform(get("/admin/v1/devices")
+                .header("X-Device-Key", apiKey))
+            .andExpect(status().isUnauthorized())
+            .andReturn();
+        assertThat(oldKeyRejected.getResponse().getContentAsString()).contains("UNAUTHORIZED");
+
+        MvcResult newLogin = mvc.perform(post("/admin/v1/auth/login")
+                .header("X-Device-Key", newApiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(Map.of(
+                    "email", "single-device@example.com",
+                    "password", PASSWORD,
+                    "totpCode", currentTotpCode(admin.totpSecret())))))
+            .andExpect(status().isOk())
+            .andReturn();
+        String newAccessToken = objectMapper.readTree(newLogin.getResponse().getContentAsString())
+            .get("accessToken").asText();
+        JsonNode devices = objectMapper.readTree(mvc.perform(get("/admin/v1/devices")
+                .header("Authorization", "Bearer " + newAccessToken)
+                .header("X-Device-Key", newApiKey))
+            .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
+        assertThat(devices).hasSize(2);
+        java.util.Map<String, String> statusById = new java.util.HashMap<>();
+        for (JsonNode device : devices) {
+            statusById.put(device.get("id").asText(), device.get("status").asText());
+        }
+        assertThat(statusById)
+            .containsEntry(firstDeviceId.toString(), "REVOKED")
+            .containsEntry(afterRevoke.get("deviceId").asText(), "ACTIVE");
+        assertThat(jdbc.queryForObject("select count(*) from admin_device where status = 'ACTIVE'",
+            Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void concurrentPairingWithOneActiveDeviceHasExactlyOneWinner() throws Exception {
+        SeededAdmin admin = seedAdmin("concurrent-pair@example.com", PASSWORD, List.of());
+        String firstCode = pairingService.createPairingCode("test");
+        String secondCode = pairingService.createPairingCode("test");
+        CsrTestSupport.Material firstMaterial = CsrTestSupport.ecP256("Concurrent One");
+        CsrTestSupport.Material secondMaterial = CsrTestSupport.ecP256("Concurrent Two");
+
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            Future<MvcResult> first = pool.submit(() -> {
+                start.await();
+                return pair("10.4.1.1", firstCode, "Concurrent One", firstMaterial);
+            });
+            Future<MvcResult> second = pool.submit(() -> {
+                start.await();
+                return pair("10.4.1.2", secondCode, "Concurrent Two", secondMaterial);
+            });
+            start.countDown();
+            MvcResult firstResult = first.get(30, TimeUnit.SECONDS);
+            MvcResult secondResult = second.get(30, TimeUnit.SECONDS);
+            List<Integer> statuses = List.of(firstResult.getResponse().getStatus(),
+                secondResult.getResponse().getStatus());
+            assertThat(statuses).containsExactlyInAnyOrder(201, 409);
+            MvcResult winner = firstResult.getResponse().getStatus() == 201 ? firstResult : secondResult;
+            JsonNode paired = objectMapper.readTree(winner.getResponse().getContentAsString());
+            if (secondResult.getResponse().getStatus() == 409) {
+                assertThat(secondResult.getResponse().getContentAsString()).contains("INVALID_STATE");
+            } else {
+                assertThat(firstResult.getResponse().getContentAsString()).contains("INVALID_STATE");
+            }
+
+            MvcResult login = mvc.perform(post("/admin/v1/auth/login")
+                    .header("X-Device-Key", paired.get("apiKey").asText())
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(Map.of(
+                        "email", "concurrent-pair@example.com",
+                        "password", PASSWORD,
+                        "totpCode", currentTotpCode(admin.totpSecret())))))
+                .andExpect(status().isOk())
+                .andReturn();
+            String accessToken = objectMapper.readTree(login.getResponse().getContentAsString())
+                .get("accessToken").asText();
+            mvc.perform(get("/admin/v1/devices")
+                    .header("Authorization", "Bearer " + accessToken)
+                    .header("X-Device-Key", paired.get("apiKey").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(paired.get("deviceId").asText()));
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test

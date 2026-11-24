@@ -34,6 +34,8 @@ See `../infra/.env.example`.
   `ADMIN_MAX_FAILED_LOGINS`, `ADMIN_LOCKOUT`
 - Links/app info: `APP_PUBLIC_BASE_URL`, `APP_ADMIN_API_URL`, `APP_PAIR_URL`,
   `ADMIN_APP_LATEST_VERSION`, `ADMIN_APP_MIN_VERSION`, `ADMIN_APP_DOWNLOAD_URL`, `ADMIN_APP_RELEASE_NOTES`
+- Admin alerts (S8): `ADMIN_ALERT_EMAIL` (always), `ADMIN_ALERT_PHONE` (optional SMS). Full destinations are masked in API responses and logs; store them only in the mode-600 `.env` file. No FCM variables remain.
+- Providers: `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, `MAILGUN_API_BASE`, `MAILGUN_FROM`, `TEXTBEE_BASE_URL`, `TEXTBEE_API_KEY`, `TEXTBEE_DEVICE_ID`, `TEXTBEE_WEBHOOK_SECRET`
 
 Generate secrets:
 ```bash

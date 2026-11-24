@@ -1,56 +1,30 @@
-# A8 — Push Notifications, App Updates, and Release
+# A8 — Deep Links, App Updates, and Release (FCM removed in S8)
 
 - Status: ready
 - Depends on: A7, S6, S7
-- Contract: `updateAdminPushToken`, `getAdminAppInfo`, FCM payloads
+- Contract: `getAdminAppInfo` (FCM/push-token operations removed in S8)
 - Next: production readiness
+- Superseded by S8: Firebase/FCM admin push is gone. Sections marked VOID are historical and MUST NOT be implemented; see below and the S8 follow-up register row "A7/A8 client".
 
 ## Goal
 
-Deliver admin push notifications, deep-link into relevant screens, enforce minimum app versions, and produce a signed sideloadable release APK with documented operations.
+Deliver deep-links into relevant screens, enforce minimum app versions, and produce a signed sideloadable release APK with documented operations. Admin new-order alerts are server-side Mailgun email plus optional Textbee SMS (S8), not in-app push.
+
+## S8 supersession (authoritative)
+
+S8 removed Firebase/FCM entirely and deleted `updateAdminPushToken`, `PushTokenRequest`, and `fcmRegistered`. The `## FCM` section and every FCM / push-token / notification-channel item in Testing, Ordered tasks, Acceptance criteria, Test plan, and Security checklist below are **VOID**. Keep mTLS device pairing, the one-active-device rule, and path-scoped WAF rules on the single hostname. No edge certificate pinning rotation runbook remains; Cloudflare owns HTTPS certificates.
 
 ## Non-goals
 
 - Play Store publishing.
 - iOS admin app.
 - Customer push notifications.
+- Admin push notifications / Firebase / FCM (removed in S8; admin alerts are server-side email/SMS).
 - Crash analytics SaaS (optional, privacy review required).
 
-## FCM
+## FCM — VOID (removed by S8)
 
-- Firebase project for the admin app.
-- `google-services.json` supplied locally; not committed if it contains project secrets. Document how to obtain it.
-- Notification channels:
-  - `orders` — new order, high importance.
-  - `system` — failures/updates, default importance.
-- On login/startup:
-  - get FCM token.
-  - `PUT /admin/v1/devices/{deviceId}/push-token` with token + app version.
-  - refresh token on rotation.
-- On logout:
-  - clear token server-side (`token: null`) and locally.
-- On device revoke/unpair:
-  - clear token.
-- Handle `onNewToken` while logged out: store pending and register after login.
-- Payload from server (data message):
-  ```json
-  {
-    "type": "NEW_ORDER",
-    "orderId": "...",
-    "menuDateId": "...",
-    "orderNumber": "BB-20261120-0001"
-  }
-  ```
-- Notification display:
-  - title/body from server data with safe fallbacks.
-  - no PII beyond order number/first name.
-  - tap opens order detail when authenticated; otherwise login with pending deep link.
-- Foreground:
-  - show in-app snackbar/banner and refresh relevant queries.
-- Background:
-  - system notification.
-- Deduplicate by notification ID/order ID within a short window.
-- If push fails, server sends admin email fallback; app does not need to handle email.
+Historical only; do not implement. No Firebase project, no `google-services.json`, no `onNewToken`/token registration or clear, no `NEW_ORDER` data message, no push channels or notification display, no foreground banner driven by push. Admin new-order alerting is server-side email/SMS. Deep links below remain in scope.
 
 ## Deep links
 
@@ -86,7 +60,6 @@ Deliver admin push notifications, deep-link into relevant screens, enforce minim
 - Manifest:
   - no unnecessary permissions.
   - camera permission for QR/photo.
-  - notifications permission (Android 13+).
   - file provider if needed for photos.
 - Crash handling:
   - top-level handler logs sanitized stack traces locally.
@@ -99,21 +72,17 @@ Deliver admin push notifications, deep-link into relevant screens, enforce minim
 
 ## Testing
 
-- Unit: FCM payload parsing, deep link parsing, version comparison, token registration.
-- Instrumented: notification channel creation, permission request, notification tap routing.
-- MockWebServer: push token registration/clear, app-info gate.
+- Unit: deep link parsing, version comparison.
+- Instrumented: deep-link tap routing.
+- MockWebServer: app-info gate.
 - Manual:
-  - FCM test message to foreground/background/killed app.
   - deep link to order/menu/notifications.
   - update gate with fake versions.
   - install signed APK on a clean device.
-  - revoke device and confirm push stops.
+  - revoke device and confirm admin API access fails.
 
 ## Security and privacy
 
-- Push payloads contain no sensitive details.
-- Token stored encrypted; cleared on logout/unpair.
-- Notification content hidden on lock screen? Provide a setting or default to generic text. Spec: generic on lock screen.
 - Pins cannot be disabled in release.
 - No world-readable files.
 - Exported components minimal; deep links validated.
@@ -122,49 +91,37 @@ Deliver admin push notifications, deep-link into relevant screens, enforce minim
 
 ## Ordered tasks
 
-1. Add Firebase dependencies and local config docs.
-2. Implement FCM service, channels, token registration/clear.
-3. Implement payload parsing and notification display.
-4. Add deep links and navigation handling.
-5. Add in-app foreground refresh/banner.
-6. Add app-info query and version gate UI.
-7. Add release build config, R8 rules, signing docs.
-8. Add network security config and final pins.
-9. Add unit/instrumented/manual tests.
-10. Produce release checklist and APK checksum instructions.
+1. Add deep links and navigation handling.
+2. Add app-info query and version gate UI.
+3. Add release build config, R8 rules, signing docs.
+4. Add network security config and final pins (no pin-rotation runbook; Cloudflare owns HTTPS certs).
+5. Add unit/instrumented/manual tests.
+6. Produce release checklist and APK checksum instructions.
 
 ## Acceptance criteria
 
-- Given a logged-in device, then its FCM token is registered with the server.
-- Given logout, then the token is cleared server-side and locally.
-- Given a new order push, then a notification appears and tapping opens the order.
-- Given a push while logged out, then login occurs and the order opens after auth.
-- Given a foreground push, then the orders list refreshes and a banner appears.
 - Given an invalid deep link, then a safe error is shown.
 - Given an unauthenticated but paired device, then `getAdminAppInfo` succeeds and the update gate runs before login.
 - Given a version below `minVersion`, then a blocking update screen appears.
 - Given a version below `latestVersion`, then a dismissible update prompt appears.
 - Given a release APK, then it installs, uses mTLS + pinning, and has no debug logging.
-- Given a revoked device, then push tokens are invalidated and API calls fail to login/pairing.
-- Given a clean device, then QR pairing → login → order notification works end to end.
+- Given a revoked device, then API calls fail to login and re-pairing is blocked by the one-active-device rule.
+- Given a clean device, then QR pairing → login → deep link to an order works end to end.
+- S8 VOID (do not implement): FCM token registration/clear, new-order/foreground/background push notification display. Admin new-order alerts are email/SMS.
 
 ## Test plan
 
-- Unit tests for payload/deep link/version logic.
-- MockWebServer token registration, app-info.
-- Instrumented notification channel/permission/tap.
-- Manual FCM foreground/background/killed.
+- Unit tests for deep link/version logic.
+- MockWebServer app-info.
+- Instrumented deep-link tap.
 - Clean-device release install and pairing.
-- Pin failure and rotation drill.
+- Pin failure drill (no rotation runbook; Cloudflare owns HTTPS certs).
 - Revocation drill.
 - Accessibility: update screen, notification content.
 
 ## Security checklist
 
-- [ ] `google-services.json` handling documented; no secrets committed.
-- [ ] Push payloads contain no sensitive PII.
-- [ ] Token encrypted and cleared on logout/unpair.
-- [ ] Lock-screen content generic.
+- [ ] No Firebase/FCM config, push token, or push payload handling remains (S8).
 - [ ] Release pinning enabled with backup pin.
 - [ ] Cleartext disabled.
 - [ ] R8 rules preserve security checks.
@@ -188,10 +145,16 @@ Quality-gate results belong in the phase PR description.
 
 ## Definition of done
 
-Admin receives actionable push notifications, deep links work, minimum versions are enforced, and a signed release APK is documented, reproducible, and verified on a clean device.
+Deep links work, minimum versions are enforced, and a signed release APK is documented, reproducible, and verified on a clean device. Admin new-order alerts are email/SMS (S8); no FCM requirement remains.
 
 ## Handoff notes
 
-- Coordinate final pins and release URL with S7 runbooks.
-- Server FCM payload changes require a spec/OpenAPI update.
-- Keep the release keystore and `google-services.json` in the operator's secret store.
+- S8 removes Firebase/FCM entirely: no Firebase project, no `google-services.json`,
+  no push token registration (`PUT /admin/v1/devices/{deviceId}/push-token`), and
+  no push payload handling. Admin alerts are Mailgun email plus optional Textbee
+  SMS (`ADMIN_ALERT_EMAIL` / `ADMIN_ALERT_PHONE`).
+- Keep mTLS device pairing: client certificate, API key, and the one-active-device
+  rule. `/admin/v1/devices/pair` is the mTLS-exempt path on the one hostname.
+- No edge certificate pinning rotation runbook remains after S8; coordinate the
+  release URL and signing with the owner, not a pin-rotation procedure.
+- Keep the release keystore in the operator's secret store.

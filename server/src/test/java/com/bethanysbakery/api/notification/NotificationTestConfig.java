@@ -2,7 +2,6 @@ package com.bethanysbakery.api.notification;
 
 import com.bethanysbakery.api.notification.NotificationMessages.DeliveryResult;
 import com.bethanysbakery.api.notification.NotificationMessages.EmailMessage;
-import com.bethanysbakery.api.notification.NotificationMessages.PushMessage;
 import com.bethanysbakery.api.notification.NotificationMessages.SmsMessage;
 import java.time.Clock;
 import java.time.Instant;
@@ -25,18 +24,19 @@ public class NotificationTestConfig {
         new AtomicReference<>(Instant.parse("2026-11-18T15:00:00Z"));
     static final RecordingEmailSender EMAIL = new RecordingEmailSender();
     static final RecordingSmsSender SMS = new RecordingSmsSender();
-    static final RecordingPushSender PUSH = new RecordingPushSender();
     static final AtomicInteger PAID_EMAIL_FAILURES = new AtomicInteger();
-    static final AtomicBoolean PUSH_NOT_CONFIGURED = new AtomicBoolean();
+    static final AtomicInteger ADMIN_EMAIL_FAILURES = new AtomicInteger();
+    static final AtomicInteger ADMIN_SMS_FAILURES = new AtomicInteger();
+    static final AtomicBoolean ADMIN_SMS_NOT_CONFIGURED = new AtomicBoolean();
 
     static void reset(Instant now) {
         NOW.set(now);
         EMAIL.sent.clear();
         SMS.sent.clear();
-        PUSH.sent.clear();
-        PUSH.rejectedTokens.clear();
         PAID_EMAIL_FAILURES.set(0);
-        PUSH_NOT_CONFIGURED.set(false);
+        ADMIN_EMAIL_FAILURES.set(0);
+        ADMIN_SMS_FAILURES.set(0);
+        ADMIN_SMS_NOT_CONFIGURED.set(false);
     }
 
     @Bean
@@ -58,16 +58,15 @@ public class NotificationTestConfig {
     @Primary
     SmsSender recordingSmsSender() { return SMS; }
 
-    @Bean
-    @Primary
-    PushSender recordingPushSender() { return PUSH; }
-
     static final class RecordingEmailSender implements EmailSender {
         final List<EmailMessage> sent = new ArrayList<>();
         @Override public DeliveryResult send(EmailMessage message) {
             sent.add(message);
             if (message.subject().contains("Paid order") && PAID_EMAIL_FAILURES.getAndDecrement() > 0) {
                 return DeliveryResult.failed("TEST_EMAIL_FAILURE");
+            }
+            if (message.subject().contains("New order") && ADMIN_EMAIL_FAILURES.getAndDecrement() > 0) {
+                return DeliveryResult.failed("TEST_ADMIN_EMAIL_FAILURE");
             }
             return DeliveryResult.sent("email-" + UUID.randomUUID());
         }
@@ -76,23 +75,14 @@ public class NotificationTestConfig {
     static final class RecordingSmsSender implements SmsSender {
         final List<SmsMessage> sent = new ArrayList<>();
         @Override public DeliveryResult send(SmsMessage message) {
+            if (ADMIN_SMS_NOT_CONFIGURED.get()) {
+                throw new ProviderNotConfiguredException("Textbee");
+            }
             sent.add(message);
+            if (ADMIN_SMS_FAILURES.getAndDecrement() > 0) {
+                return DeliveryResult.failed("TEST_ADMIN_SMS_FAILURE");
+            }
             return DeliveryResult.sent("sms-" + UUID.randomUUID());
-        }
-    }
-
-    static final class RecordingPushSender implements PushSender {
-        final List<PushMessage> sent = new ArrayList<>();
-        final java.util.Set<String> rejectedTokens = new java.util.HashSet<>();
-        @Override public DeliveryResult send(PushMessage message) {
-            if (PUSH_NOT_CONFIGURED.get()) {
-                throw new ProviderNotConfiguredException("FCM");
-            }
-            if (rejectedTokens.contains(message.token())) {
-                return DeliveryResult.failed("FCM_INVALID_TOKEN");
-            }
-            sent.add(message);
-            return DeliveryResult.sent("push-" + UUID.randomUUID());
         }
     }
 }

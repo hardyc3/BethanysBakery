@@ -12,8 +12,10 @@ import com.bethanysbakery.api.common.Uuids;
 import com.bethanysbakery.api.domain.auth.Customer;
 import com.bethanysbakery.api.domain.auth.CustomerStatus;
 import com.bethanysbakery.api.domain.auth.SubjectType;
+import com.bethanysbakery.api.domain.notification.NotificationEventType;
 import com.bethanysbakery.api.domain.notification.NotificationRepository;
 import com.bethanysbakery.api.domain.notification.NotificationStatus;
+import com.bethanysbakery.api.domain.order.OrderRepository;
 import com.bethanysbakery.api.domain.order.OrderStatus;
 import com.bethanysbakery.api.notification.NotificationMessages.EmailMessage;
 import com.bethanysbakery.api.notification.NotificationMessages.SmsMessage;
@@ -30,6 +32,7 @@ import java.time.ZoneId;
 import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -39,11 +42,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 
 /** S6 payment, preference, webhook, scheduler, dispatch, retry, and admin-queue integration coverage. */
 @Import(NotificationTestConfig.class)
+@TestPropertySource(properties = "bakery.notifications.admin-alert-phone=+15551234567")
 class NotificationIntegrationTest extends IntegrationTestBase {
 
     private static final String PASSWORD = "correct horse battery staple";
@@ -51,11 +56,18 @@ class NotificationIntegrationTest extends IntegrationTestBase {
     private static final Instant BASE_NOW = Instant.parse("2026-11-18T16:30:00Z");
     private static final String WEBHOOK_SECRET = "test-webhook-secret";
 
+    // Independent copy of the nine customer events from docs/specs/server/S8-review-followups.md:74,111.
+    private static final List<String> CUSTOMER_EVENT_TYPES = List.of(
+        "MENU_PUBLISHED", "ORDER_REMINDER", "ORDER_ACCEPTED", "ORDER_READY", "ORDER_DELAYED",
+        "ORDER_REJECTED", "ORDER_CANCELLED", "ORDER_EXPIRED", "MENU_CANCELLED");
+
     @Autowired SessionService sessions;
     @Autowired OutboxProcessor outbox;
     @Autowired NotificationDispatchService dispatcher;
     @Autowired MenuNotificationService menuNotifications;
     @Autowired NotificationRepository notifications;
+    @Autowired NotificationService notificationService;
+    @Autowired OrderRepository orders;
 
     private String accessToken;
     private String deviceKey;
@@ -379,108 +391,118 @@ class NotificationIntegrationTest extends IntegrationTestBase {
     }
 
     @Test
-    void newOrderPushFailureClearsTokenAndQueuesEmailFallback() throws Exception {
-        mvc.perform(put("/admin/v1/devices/" + deviceId + "/push-token").headers(adminHeaders())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"token\":\"fcm-token-1\",\"appVersion\":\"1.0.0\"}"))
-            .andExpect(status().isNoContent());
-        assertThat(jdbc.queryForObject("select fcm_token from admin_device where id = ?::uuid",
-            String.class, deviceId)).isEqualTo("fcm-token-1");
-
-        ResultActions created = createOrder(buyer, 1, false, null, null, "push-order");
+    void newOrderQueuesAdminEmailAndSmsWithDistinctKeysAndMasksDestinations() throws Exception {
+        ResultActions created = createOrder(buyer, 1, false, "private note", null, "admin-alert-order");
         String orderId = orderId(created);
+        String number = orderNumber(created);
         processOutbox();
-        assertThat(countNotifications("ADMIN_NEW_ORDER")).isEqualTo(1);
-        assertThat(jdbc.queryForObject("select count(*) from notification where event_type = 'ADMIN_NEW_ORDER'",
-            Integer.class)).isEqualTo(1);
 
-        NotificationTestConfig.PUSH.rejectedTokens.add("fcm-token-1");
-        dispatcher.dispatchDue();
-        assertThat(jdbc.queryForObject("select fcm_token from admin_device where id = ?::uuid",
-            String.class, deviceId)).isNull();
-        assertThat(jdbc.queryForObject("select fcm_updated_at from admin_device where id = ?::uuid",
-            java.sql.Timestamp.class, deviceId)).isNotNull();
-        assertThat(countNotifications("ADMIN_NEW_ORDER")).isEqualTo(2);
+        UUID emailNotification = notificationId(NotificationKeys.adminNewOrderEmail(UUID.fromString(orderId)));
+        UUID smsNotification = notificationId(NotificationKeys.adminNewOrderSms(UUID.fromString(orderId)));
+        assertThat(statusOf(emailNotification)).isEqualTo(NotificationStatus.QUEUED);
+        assertThat(statusOf(smsNotification)).isEqualTo(NotificationStatus.QUEUED);
+        assertThat(jdbc.queryForObject("select count(*) from notification where idempotency_key like 'ADMIN_NEW_ORDER:%'",
+            Integer.class)).isZero();
+
+        // Idempotency: a repeated enqueue must not duplicate either admin alert.
+        notificationService.enqueueAdminNewOrder(orders.findById(UUID.fromString(orderId)).orElseThrow());
+        assertThat(countAdminAlerts()).isEqualTo(2);
 
         dispatcher.dispatchDue();
-        EmailMessage fallback = email("New order " + orderNumber(created));
-        assertThat(fallback.to()).isEqualTo("admin@example.com");
-        assertThat(fallback.textBody()).contains(orderNumber(created), bakeDate.toString());
+        EmailMessage email = email("New order " + number);
+        assertThat(email.to()).isEqualTo("admin@example.com");
+        assertThat(email.textBody()).contains(number, bakeDate.toString());
+        SmsMessage sms = sms(number);
+        assertThat(sms.to()).isEqualTo("+15551234567");
 
         JsonNode list = objectMapper.readTree(mvc.perform(get("/admin/v1/notifications").headers(adminHeaders()))
             .andExpect(status().isOk()).andReturn().getResponse().getContentAsString());
         assertThat(list.get("total").asInt()).isEqualTo(2);
-        assertThat(list.get("items").toString()).doesNotContain("admin@example.com", "fcm-token-1");
-        assertThat(list.get("items").toString()).contains("ad***@example.com", "***en-1")
-            .doesNotContain("fcm-token-1");
+        assertThat(list.get("items").toString())
+            .doesNotContain("admin@example.com", "+15551234567", "private note")
+            .contains("ad***@example.com", "***4567");
     }
 
     @Test
-    void newOrderPushSuccessSendsPushAndSkipsEmailFallback() throws Exception {
-        mvc.perform(put("/admin/v1/devices/" + deviceId + "/push-token").headers(adminHeaders())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"token\":\"fcm-token-ok\",\"appVersion\":\"1.0.0\"}"))
-            .andExpect(status().isNoContent());
-
-        ResultActions created = createOrder(buyer, 1, false, null, "private line note", "push-success-order");
-        String orderNumber = orderNumber(created);
+    void failedAdminEmailAndSmsKeepBackoffAndAdminRetry() throws Exception {
+        ResultActions created = createOrder(buyer, 1, false, null, null, "admin-alert-failure-order");
+        UUID order = UUID.fromString(orderId(created));
         processOutbox();
-        dispatcher.dispatchDue();
+        UUID emailNotification = notificationId(NotificationKeys.adminNewOrderEmail(order));
+        UUID smsNotification = notificationId(NotificationKeys.adminNewOrderSms(order));
+        NotificationTestConfig.ADMIN_EMAIL_FAILURES.set(10);
+        NotificationTestConfig.ADMIN_SMS_FAILURES.set(10);
 
-        assertThat(NotificationTestConfig.PUSH.sent).hasSize(1);
-        assertThat(NotificationTestConfig.PUSH.sent.get(0).token()).isEqualTo("fcm-token-ok");
-        assertThat(NotificationTestConfig.PUSH.sent.get(0).title()).contains(orderNumber);
-        assertThat(NotificationTestConfig.PUSH.sent.get(0).body())
-            .contains(orderNumber).doesNotContain("private line note");
-        assertThat(NotificationTestConfig.PUSH.sent.get(0).data())
-            .containsEntry("type", "NEW_ORDER")
-            .containsEntry("orderId", orderId(created))
-            .containsEntry("menuDateId", dateId)
-            .containsEntry("orderNumber", orderNumber);
-        assertThat(countFallbackEmails()).isZero();
-        assertThat(jdbc.queryForObject("select fcm_token from admin_device where id = ?::uuid",
-            String.class, deviceId)).isEqualTo("fcm-token-ok");
-        assertThat(statusOf(notificationId(
-            NotificationKeys.adminNewOrder(UUID.fromString(orderId(created))))))
-            .isEqualTo(NotificationStatus.SENT);
+        Instant next = BASE_NOW;
+        for (Duration backoff : List.of(Duration.ofMinutes(1), Duration.ofMinutes(5),
+                Duration.ofMinutes(15), Duration.ofHours(1), Duration.ofHours(6))) {
+            next = next.plus(backoff).plusSeconds(1);
+            NotificationTestConfig.NOW.set(next);
+            dispatcher.dispatchDue();
+            assertThat(statusOf(emailNotification)).isNotEqualTo(NotificationStatus.FAILED);
+            assertThat(statusOf(smsNotification)).isNotEqualTo(NotificationStatus.FAILED);
+        }
+        NotificationTestConfig.NOW.set(next.plus(Duration.ofHours(6)).plusSeconds(1));
+        dispatcher.dispatchDue();
+        assertThat(statusOf(emailNotification)).isEqualTo(NotificationStatus.FAILED);
+        assertThat(statusOf(smsNotification)).isEqualTo(NotificationStatus.FAILED);
+        assertThat(attemptsOf(emailNotification)).isEqualTo(6);
+        assertThat(attemptsOf(smsNotification)).isEqualTo(6);
+
+        NotificationTestConfig.ADMIN_EMAIL_FAILURES.set(0);
+        NotificationTestConfig.ADMIN_SMS_FAILURES.set(0);
+        mvc.perform(post("/admin/v1/notifications/" + emailNotification + "/retry").headers(adminHeaders()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("QUEUED"));
+        mvc.perform(post("/admin/v1/notifications/" + smsNotification + "/retry").headers(adminHeaders()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("QUEUED"));
+        NotificationTestConfig.NOW.set(NotificationTestConfig.NOW.get().plusSeconds(1));
+        dispatcher.dispatchDue();
+        assertThat(statusOf(emailNotification)).isEqualTo(NotificationStatus.SENT);
+        assertThat(statusOf(smsNotification)).isEqualTo(NotificationStatus.SENT);
+        assertThat(auditCount("NOTIFICATION_RETRY")).isEqualTo(2);
     }
 
     @Test
-    void partialPushFailureClearsOnlyBadTokenAndSkipsEmailFallback() throws Exception {
-        mvc.perform(put("/admin/v1/devices/" + deviceId + "/push-token").headers(adminHeaders())
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"token\":\"fcm-token-ok\",\"appVersion\":\"1.0.0\"}"))
-            .andExpect(status().isNoContent());
-        UUID secondDeviceId = seedDevice(adminId, "notifications-device-key-2", "Tablet").id();
-        jdbc.update("update admin_device set fcm_token = ? where id = ?::uuid",
-            "fcm-token-bad", secondDeviceId.toString());
-        NotificationTestConfig.PUSH.rejectedTokens.add("fcm-token-bad");
+    void allOffPreferencesSuppressNineCustomerEventsAndActiveOrderCancellationButNotAdminPaidEmail()
+            throws Exception {
+        assertThat(NotificationService.customerEvents()).extracting(NotificationEventType::name)
+            .containsExactlyElementsOf(CUSTOMER_EVENT_TYPES);
+        writeAllOff(buyer);
+        String orderId = orderId(createOrder(buyer, 1, false, null, null, "all-off-order"));
+        pay(orderId, true, "VENMO").andExpect(status().isOk());
+        assertThat(countNotifications("ORDER_PAID")).isEqualTo(1);
+        UUID order = UUID.fromString(orderId);
 
-        ResultActions created = createOrder(buyer, 1, false, null, null, "partial-push-order");
-        processOutbox();
-        dispatcher.dispatchDue();
+        for (String type : CUSTOMER_EVENT_TYPES) {
+            notificationService.enqueueCustomer(buyer.id(), NotificationEventType.valueOf(type), "ORDER", order,
+                "all-off:" + type, Map.of("orderNumber", "BB-ALL-OFF"), BASE_NOW);
+        }
 
-        assertThat(NotificationTestConfig.PUSH.sent).hasSize(1);
-        assertThat(NotificationTestConfig.PUSH.sent.get(0).token()).isEqualTo("fcm-token-ok");
-        assertThat(jdbc.queryForObject("select fcm_token from admin_device where id = ?::uuid",
-            String.class, secondDeviceId)).isNull();
-        assertThat(countFallbackEmails()).isZero();
-    }
+        mvc.perform(post("/admin/v1/menu-dates/" + dateId + "/cancel").headers(adminHeaders())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"sold out\"}"))
+            .andExpect(status().isOk());
 
-    @Test
-    void unconfiguredPushStillQueuesAdminFallbackEmail() throws Exception {
-        jdbc.update("update admin_device set fcm_token = ? where id = ?::uuid",
-            "fcm-token-unconfigured", deviceId.toString());
-        NotificationTestConfig.PUSH_NOT_CONFIGURED.set(true);
-
-        ResultActions created = createOrder(buyer, 1, false, null, null, "push-unconfigured-order");
-        processOutbox();
-        dispatcher.dispatchDue();
-
-        assertThat(NotificationTestConfig.PUSH.sent).isEmpty();
-        assertThat(statusOf(notificationId(NotificationKeys.adminNewOrder(UUID.fromString(orderId(created))))))
-            .isEqualTo(NotificationStatus.FAILED);
-        assertThat(countFallbackEmails()).isEqualTo(1);
+        Integer customerDeliveries = jdbc.queryForObject("""
+            select count(*) from notification_delivery d
+            join notification n on n.id = d.notification_id
+            where n.customer_id = ?::uuid and n.event_type in
+                ('MENU_PUBLISHED','ORDER_REMINDER','ORDER_ACCEPTED','ORDER_READY','ORDER_DELAYED',
+                 'ORDER_REJECTED','ORDER_CANCELLED','ORDER_EXPIRED','MENU_CANCELLED')
+            """, Integer.class, buyer.id().toString());
+        Integer customerNotifications = jdbc.queryForObject("""
+            select count(*) from notification
+            where customer_id = ?::uuid and event_type in
+                ('MENU_PUBLISHED','ORDER_REMINDER','ORDER_ACCEPTED','ORDER_READY','ORDER_DELAYED',
+                 'ORDER_REJECTED','ORDER_CANCELLED','ORDER_EXPIRED','MENU_CANCELLED')
+            """, Integer.class, buyer.id().toString());
+        assertThat(customerNotifications).isZero();
+        assertThat(customerDeliveries).isZero();
+        assertThat(jdbc.queryForObject("select count(*) from notification where customer_id = ?::uuid "
+            + "and event_type = 'MENU_CANCELLED'", Integer.class, buyer.id().toString())).isZero();
+        assertThat(deliveryStatus(notificationId(NotificationKeys.paid(order)), "EMAIL"))
+            .isEqualTo(NotificationStatus.QUEUED.name());
     }
 
     @Test
@@ -751,6 +773,24 @@ class NotificationIntegrationTest extends IntegrationTestBase {
                 .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(body)));
     }
 
+    private ResultActions writeAllOff(CustomerFixture fixture) throws Exception {
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("smsConsent", false);
+        ArrayNode preferences = body.putArray("preferences");
+        for (String type : CUSTOMER_EVENT_TYPES) {
+            ObjectNode pref = preferences.addObject();
+            pref.put("eventType", type);
+            pref.put("emailEnabled", false);
+            pref.put("smsEnabled", false);
+        }
+        Csrf csrf = csrf(fixture);
+        return mvc.perform(put("/api/v1/me/notification-preferences")
+                .cookie(fixture.cookie(), csrf.cookie())
+                .header("X-CSRF-Token", csrf.token())
+                .contentType(MediaType.APPLICATION_JSON).content(objectMapper.writeValueAsString(body)))
+            .andExpect(status().isOk());
+    }
+
     private void enableSms(CustomerFixture fixture, String... eventTypes) throws Exception {
         ObjectNode body = objectMapper.createObjectNode();
         body.put("smsConsent", true);
@@ -808,9 +848,10 @@ class NotificationIntegrationTest extends IntegrationTestBase {
             Integer.class, eventType);
     }
 
-    private int countFallbackEmails() {
+    private int countAdminAlerts() {
         return jdbc.queryForObject(
-            "select count(*) from notification where idempotency_key like 'ADMIN_NEW_ORDER_EMAIL:%'",
+            "select count(*) from notification where idempotency_key like 'ADMIN_NEW_ORDER_EMAIL:%' "
+                + "or idempotency_key like 'ADMIN_NEW_ORDER_SMS:%'",
             Integer.class);
     }
 

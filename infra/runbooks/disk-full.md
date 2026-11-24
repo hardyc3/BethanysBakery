@@ -1,8 +1,10 @@
-# Disk full (media / backups / Docker)
+# Disk full (media / Docker / LXC)
 
 Prerequisites
-- Root/sudo on the Alpine host; identify whether `/`, `/opt/bethanys-bakery`, or `/var/lib/docker` is full.
-- Do not delete DB volume data, active media, `.env`, or CA keys.
+- Root/sudo on the Alpine LXC; identify whether `/`, `/opt/bethanys-bakery`, or
+  `/var/lib/docker` is full. Proxmox snapshot storage is outside the LXC.
+- Do not delete DB volume data, active media, `.env`, or CA keys. No restic
+  repository, pg_dump files, or backup scripts exist in this setup.
 
 Locate pressure
 ```bash
@@ -18,28 +20,30 @@ Safe cleanup (in order)
 docker image prune -f                       # unused images only; never `docker system prune -a --volumes`
 docker builder prune -f
 
-# 2. Old restic snapshots (retention is already 7/4/6; this is an emergency tightening).
-set -a; . /opt/bethanys-bakery/prod/.env; set +a
-restic forget --keep-daily 3 --keep-weekly 2 --keep-monthly 2 --prune
-restic check
-
-# 3. Orphan media files after review (media-reconciliation.md).
+# 2. Orphan media files after review (media-reconciliation.md).
 #    Do NOT rm -rf /data/media or the media volume.
 
-# 4. If a single container log grew despite json-file rotation, truncate it.
+# 3. If a single container log grew despite json-file rotation, truncate it.
 : > "$(docker inspect --format='{{.LogPath}}' <container-id>)"
+
+# 4. If the LXC disk itself is exhausted, ask the owner to grow the Proxmox
+#    volume or prune old Proxmox snapshots. Do not delete the current snapshot.
 ```
 
 Verification
 ```bash
 df -h / /opt/bethanys-bakery /var/lib/docker
-sh /opt/bethanys-bakery/infra/scripts/status.sh prod
+sh /opt/bethanys-bakery/infra/scripts/status.sh
 curl -fsS https://bakery.cherry-home.com/api/v1/config
 ```
-- API health returns 200; media upload and download succeed; restic repo still has a valid recent snapshot.
+- API health returns 200; media upload and download succeed; a recent Proxmox
+  container snapshot still exists.
 
 Rollback
-- Cleanup is irreversible for pruned images/logs. If a required image was pruned, rebuild with `sh infra/scripts/build.sh prod`. If a needed restic snapshot was removed, there is no rollback — restore from offsite repository if configured.
+- Cleanup is irreversible for pruned images/logs. If a required image was
+  pruned, rebuild in the LXC with:
+  `cd /opt/bethanys-bakery && git pull --ff-only && docker compose -f infra/compose.prod.yml --env-file /opt/bethanys-bakery/.env up -d --build`.
 
 Notify
-- Owner + ops on-call immediately for SEV1 disk exhaustion; record freed bytes and follow-up capacity action.
+- Owner + ops on-call immediately for SEV1 disk exhaustion; record freed bytes
+  and follow-up capacity action.

@@ -6,6 +6,7 @@ import com.bethanysbakery.api.auth.audit.AuditService;
 import com.bethanysbakery.api.common.Uuids;
 import com.bethanysbakery.api.common.error.RequestValidationException;
 import com.bethanysbakery.api.domain.audit.ActorType;
+import com.bethanysbakery.api.domain.audit.AuditActions;
 import com.bethanysbakery.api.domain.auth.Customer;
 import com.bethanysbakery.api.domain.auth.CustomerRepository;
 import com.bethanysbakery.api.domain.menu.MenuDate;
@@ -25,7 +26,10 @@ import com.bethanysbakery.api.domain.order.PaymentStatus;
 import com.bethanysbakery.api.menu.MenuTimeRules;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.criteria.Predicate;
+import java.sql.Connection;
 import java.sql.Date;
+import java.sql.SQLException;
+import java.sql.Savepoint;
 import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
@@ -41,6 +45,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
+import javax.sql.DataSource;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -49,6 +55,9 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.datasource.DataSourceUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,6 +65,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderService {
 
+    private static final Logger log = LoggerFactory.getLogger(OrderService.class);
     private static final List<OrderStatus> ACTIVE = Arrays.stream(OrderStatus.values())
         .filter(OrderStatus::isActive).toList();
     private static final List<OrderStatus> TERMINAL_FAILURES = Arrays.stream(OrderStatus.values())
@@ -75,14 +85,15 @@ public class OrderService {
     private final OrderEventPublisher publisher;
     private final OrderViews views;
     private final JdbcTemplate jdbc;
+    private final DataSource dataSource;
     private final EntityManager entityManager;
     private final Clock clock;
 
     public OrderService(OrderRepository orders, CustomerRepository customers, MenuDateRepository dates,
             PickupWindowRepository windows, OfferingRepository offerings, MenuTimeRules time,
             OrderPricing pricing, InventoryService inventory, AuditService audit, OutboxWriter outbox,
-            OrderEventPublisher publisher, OrderViews views, JdbcTemplate jdbc, EntityManager entityManager,
-            Clock clock) {
+            OrderEventPublisher publisher, OrderViews views, JdbcTemplate jdbc, DataSource dataSource,
+            EntityManager entityManager, Clock clock) {
         this.orders = orders;
         this.customers = customers;
         this.dates = dates;
@@ -96,6 +107,7 @@ public class OrderService {
         this.publisher = publisher;
         this.views = views;
         this.jdbc = jdbc;
+        this.dataSource = dataSource;
         this.entityManager = entityManager;
         this.clock = clock;
     }
@@ -104,6 +116,11 @@ public class OrderService {
 
     @Transactional
     public Created create(OrderApi.CreateOrderRequest request, UUID customerId) {
+        Instant serverReceivedAt = clock.instant();
+        Instant clientSubmittedAt = request.clientSubmittedAt();
+        // Compute before the lookup: replay must not need the menu/offering to still be valid.
+        String fingerprint = RequestFingerprint.sha256Hex(request);
+
         // Serialize per customer so two concurrent retries with the same key cannot both pass the
         // lookup below and race into the partial unique index.
         try {
@@ -117,6 +134,7 @@ public class OrderService {
         if (idempotencyKey != null) {
             var existing = orders.findByCustomerIdAndIdempotencyKey(customerId, idempotencyKey);
             if (existing.isPresent()) {
+                recordReplay(customerId, existing.get(), fingerprint, clientSubmittedAt, serverReceivedAt);
                 return new Created(views.order(existing.get()), false);
             }
         }
@@ -139,29 +157,46 @@ public class OrderService {
         }
 
         List<NormalizedLine> lines = normalize(request.items(), date.getId(), window.getId());
-        reserveWindow(window.getId(), now);
-        checkCustomerLimits(customerId, date.getId(), lines);
-        reserveOfferings(lines, now);
+        Connection connection = DataSourceUtils.getConnection(dataSource);
+        Savepoint savepoint = createSavepoint(connection);
+        try {
+            reserveWindow(window.getId(), now);
+            checkCustomerLimits(customerId, date.getId(), lines);
+            reserveOfferings(lines, now);
 
-        String orderNumber = nextOrderNumber(date.getBakeDate());
-        UUID orderId = Uuids.v7();
-        Instant expiresAt = time.orderCutoffAt(window.getStartAt());
-        String notes = trimToNull(request.notes());
-        insertOrder(orderId, orderNumber, customer, date, window, idempotencyKey, notes, expiresAt,
-            totalOf(lines), now);
-        for (NormalizedLine line : lines) {
-            insertLine(orderId, line, now);
+            String orderNumber = nextOrderNumber(date.getBakeDate());
+            UUID orderId = Uuids.v7();
+            Instant expiresAt = time.orderCutoffAt(window.getStartAt());
+            String notes = trimToNull(request.notes());
+            insertOrder(orderId, orderNumber, customer, date, window, idempotencyKey, clientSubmittedAt,
+                fingerprint, notes, expiresAt, totalOf(lines), now);
+            for (NormalizedLine line : lines) {
+                insertLine(orderId, line, now);
+            }
+
+            outbox.orderCreated(orderId, orderNumber, now);
+            audit.record(ActorType.CUSTOMER, customerId, "ORDER_CREATED", "ORDER", orderId, null,
+                orderCreatedAuditPayload(orderNumber, totalOf(lines), clientSubmittedAt, serverReceivedAt));
+
+            Order created = orders.findById(orderId).orElseThrow();
+            publisher.orderCreated(created);
+            flushAndClear();
+            log.info("order_submission_timestamps clientSubmittedAt={} serverReceivedAt={} orderId={}",
+                instantText(clientSubmittedAt), instantText(serverReceivedAt), orderId);
+            return new Created(views.order(orders.findById(orderId).orElseThrow()), true);
+        } catch (DuplicateKeyException ex) {
+            if (!isIdempotencyConflict(ex)) throw ex;
+            // Counter/sequence rows are already written. Undo them at the savepoint instead of
+            // returning a replay from a rollback-only or dirty transaction.
+            rollbackToSavepoint(connection, savepoint);
+            if (idempotencyKey == null) throw ex;
+            Order raced = orders.findByCustomerIdAndIdempotencyKey(customerId, idempotencyKey).orElseThrow(() -> ex);
+            recordReplay(customerId, raced, fingerprint, clientSubmittedAt, serverReceivedAt);
+            return new Created(views.order(raced), false);
+        } finally {
+            releaseSavepoint(connection, savepoint);
+            DataSourceUtils.releaseConnection(connection, dataSource);
         }
-
-        outbox.orderCreated(orderId, orderNumber, now);
-        audit.record(ActorType.CUSTOMER, customerId, "ORDER_CREATED", "ORDER", orderId, null,
-            Map.of("orderNumber", orderNumber, "status", OrderStatus.PENDING.name(),
-                "totalCents", totalOf(lines)));
-
-        Order created = orders.findById(orderId).orElseThrow();
-        publisher.orderCreated(created);
-        flushAndClear();
-        return new Created(views.order(orders.findById(orderId).orElseThrow()), true);
     }
 
     private List<NormalizedLine> normalize(List<OrderApi.CreateOrderItem> items, UUID menuDateId, UUID windowId) {
@@ -274,17 +309,19 @@ public class OrderService {
     }
 
     private void insertOrder(UUID orderId, String orderNumber, Customer customer, MenuDate date,
-            PickupWindow window, String idempotencyKey, String notes, Instant expiresAt, int total, Instant now) {
+            PickupWindow window, String idempotencyKey, Instant clientSubmittedAt, String fingerprint,
+            String notes, Instant expiresAt, int total, Instant now) {
         jdbc.update("""
             INSERT INTO orders (id, order_number, customer_id, menu_date_id, pickup_window_id,
-                idempotency_key, status, payment_status, subtotal_cents, total_cents, customer_name,
-                customer_email, customer_phone, notes, expires_at, version, created_at, updated_at)
-            VALUES (?::uuid, ?, ?::uuid, ?::uuid, ?::uuid, ?, 'PENDING', 'UNPAID', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                idempotency_key, client_submitted_at, request_fingerprint, status, payment_status,
+                subtotal_cents, total_cents, customer_name, customer_email, customer_phone, notes,
+                expires_at, version, created_at, updated_at)
+            VALUES (?::uuid, ?, ?::uuid, ?::uuid, ?::uuid, ?, ?, ?, 'PENDING', 'UNPAID', ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             """,
             orderId.toString(), orderNumber, customer.getId().toString(), date.getId().toString(),
-            window.getId().toString(), idempotencyKey, total, total, customer.getName(),
-            customer.getEmail(), customer.getPhoneE164(), notes, Timestamp.from(expiresAt),
-            Timestamp.from(now), Timestamp.from(now));
+            window.getId().toString(), idempotencyKey, timestampOrNull(clientSubmittedAt), fingerprint,
+            total, total, customer.getName(), customer.getEmail(), customer.getPhoneE164(), notes,
+            Timestamp.from(expiresAt), Timestamp.from(now), Timestamp.from(now));
     }
 
     private void insertLine(UUID orderId, NormalizedLine line, Instant now) {
@@ -642,6 +679,82 @@ public class OrderService {
 
     private int update(String sql, Object... args) {
         return jdbc.update(sql, args);
+    }
+
+    static Map<String, Object> orderCreatedAuditPayload(String orderNumber, int totalCents,
+            Instant clientSubmittedAt, Instant serverReceivedAt) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("orderNumber", orderNumber);
+        payload.put("status", OrderStatus.PENDING.name());
+        payload.put("totalCents", totalCents);
+        appendSubmissionTimestamps(payload, clientSubmittedAt, serverReceivedAt);
+        return payload;
+    }
+
+    static Map<String, Object> replayAuditPayload(boolean payloadChanged, Instant clientSubmittedAt,
+            Instant serverReceivedAt) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("payloadChanged", payloadChanged);
+        appendSubmissionTimestamps(payload, clientSubmittedAt, serverReceivedAt);
+        return payload;
+    }
+
+    private static void appendSubmissionTimestamps(Map<String, Object> payload, Instant clientSubmittedAt,
+            Instant serverReceivedAt) {
+        payload.put("clientSubmittedAt", instantText(clientSubmittedAt));
+        payload.put("serverReceivedAt", instantText(serverReceivedAt));
+    }
+
+    private static String instantText(Instant instant) {
+        return instant == null ? null : instant.toString();
+    }
+
+    private void recordReplay(UUID customerId, Order existing, String fingerprint, Instant clientSubmittedAt,
+            Instant serverReceivedAt) {
+        boolean samePayload = fingerprint.equals(existing.getRequestFingerprint());
+        audit.record(ActorType.CUSTOMER, customerId, AuditActions.ORDER_IDEMPOTENCY_REPLAY, "ORDER",
+            existing.getId(), null, replayAuditPayload(!samePayload, clientSubmittedAt, serverReceivedAt));
+    }
+
+    private static Savepoint createSavepoint(Connection connection) {
+        try {
+            return connection.setSavepoint("order_create_writes");
+        } catch (SQLException ex) {
+            throw new IllegalStateException("Could not open savepoint for order writes", ex);
+        }
+    }
+
+    private static void rollbackToSavepoint(Connection connection, Savepoint savepoint) {
+        try {
+            connection.rollback(savepoint);
+        } catch (SQLException ex) {
+            throw new IllegalStateException("Could not roll back order writes", ex);
+        }
+    }
+
+    private static void releaseSavepoint(Connection connection, Savepoint savepoint) {
+        try {
+            connection.releaseSavepoint(savepoint);
+        } catch (SQLException ignored) {
+            // Connection may already have released savepoints on rollback; nothing to do.
+        }
+    }
+
+    private static boolean isIdempotencyConflict(DuplicateKeyException ex) {
+        if (ex.getMessage() != null && ex.getMessage().contains("uq_orders_idempotency")) return true;
+        Throwable cause = ex.getCause();
+        while (cause != null) {
+            if (cause instanceof SQLException sql && "23505".equals(sql.getSQLState())
+                    && sql.getMessage() != null && sql.getMessage().contains("uq_orders_idempotency")) {
+                return true;
+            }
+            cause = cause.getCause();
+        }
+        return false;
+    }
+
+    private static Timestamp timestampOrNull(Instant instant) {
+        return instant == null ? null : Timestamp.from(instant);
     }
 
     /** Flush JPA writes (audits, cascades) before detaching so clear() cannot discard them. */

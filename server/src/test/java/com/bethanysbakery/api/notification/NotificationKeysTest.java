@@ -17,7 +17,7 @@ class NotificationKeysTest {
         assertThat(NotificationKeys.orderEvent("ORDER_ACCEPTED", ID)).isEqualTo("ORDER_ACCEPTED:" + ID);
         assertThat(NotificationKeys.paid(ID)).isEqualTo("order:" + ID + ":paid");
         assertThat(NotificationKeys.menuCancelled(ID, OTHER)).isEqualTo("MENU_CANCELLED:" + ID + ":" + OTHER);
-        assertThat(NotificationKeys.adminNewOrder(ID)).isEqualTo("ADMIN_NEW_ORDER:" + ID);
         assertThat(NotificationKeys.adminNewOrderEmail(ID)).isEqualTo("ADMIN_NEW_ORDER_EMAIL:" + ID);
+        assertThat(NotificationKeys.adminNewOrderSms(ID)).isEqualTo("ADMIN_NEW_ORDER_SMS:" + ID);
     }
 }
