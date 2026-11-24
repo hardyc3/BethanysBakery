@@ -1,8 +1,8 @@
 # A6 — Orders, Payments, Bake List, and Bakery Overview
 
 - Status: ready
-- Depends on: A5, S5, S6
-- Contract: `docs/api/openapi.yaml` → Admin Orders
+- Depends on: A5, S5, S6, S9
+- Contract: `docs/api/openapi.yaml` → Admin Orders, Admin Notifications (recipient preview)
 - Design: `design examples/design_exmaples.json` → **Bethany · Bakery overview**, **Bethany · Pickup orders**
 - Next: A7
 
@@ -40,15 +40,16 @@ Provide bakery operations views: overview snapshot/bake readiness, pickup orders
   - badges: payment ("Payment pending" / "Paid") and prep/status ("To prepare", "Ready for pickup").
   - actions (contextual):
     - "Confirm Venmo payment  →" when unpaid/payment needs confirmation (maps to mark paid/payment update flow as appropriate).
-    - "Mark ready & notify" for orders to prepare (marks ready and triggers ready notification per server rules).
+    - "Mark ready & notify" for orders to prepare (marks ready and triggers ready notification per server rules). Show the current recipient count from `previewNotificationRecipients` for `ORDER_READY` and allow opening the masked recipient list before confirming.
     - "Mark picked up" for ready orders (marks completed/picked up).
-- Footer/help text: "Marking an order ready sends the customer\na pickup notification."
+- Footer/help text: "Marking an order ready sends the customer\na pickup notification. Count is current and may change."
 - Pull-to-refresh/manual refresh; preserve state.
 
 ### Order detail
 
 - Full detail: customer contact (copy/call/email), lines/options/notes, totals, timestamps/reasons.
 - Actions by state/payment (admin): accept/reject (reason), mark ready/completed, mark paid/unpaid (method Venmo/Cash/Other admin-only), delay/cancel with confirmations; handle 409 by refresh/explain. (Retain/align with server-supported transitions.)
+- Each customer-notification action shows the server recipient count and a link to A7's masked recipient preview before confirmation: `ORDER_ACCEPTED`, `ORDER_READY`, `ORDER_DELAYED`, `ORDER_REJECTED`, `ORDER_CANCELLED`, `ORDER_EXPIRED`.
 - Times in `America/Denver`.
 
 ### Bake list
@@ -69,6 +70,7 @@ Provide bakery operations views: overview snapshot/bake readiness, pickup orders
 - `listAdminOrders`, `getAdminOrder`
 - `acceptOrder`, `rejectOrder`, `markOrderReady`, `markOrderCompleted`
 - `cancelAdminOrder`, `updateOrderPayment`, `notifyOrderDelayed`
+- `previewNotificationRecipients` for order-scoped customer events.
 - `getBakeList`, `getAdminSummary` (and/or equivalent endpoints for overview counts/slots)
 - Slot/capacity info from pickup window/order data as provided by API.
 
@@ -77,7 +79,7 @@ Provide bakery operations views: overview snapshot/bake readiness, pickup orders
 1. Overview snapshot cards, bake capacity list, and next-pickup CTA.
 2. Pickup orders list with date selector, filter chips/counts, and slot grouping/capacity.
 3. Order cards with badges and contextual actions (confirm payment, mark ready & notify, mark picked up).
-4. Order detail view and full admin action set with validations/confirmations.
+4. Order detail view and full admin action set with validations/confirmations and recipient preview counts/lists.
 5. Bake list view.
 6. Polling/refresh and 409/error handling.
 7. Tests (unit state mapping, MockWebServer, Compose UI) and fixtures.
@@ -87,7 +89,7 @@ Provide bakery operations views: overview snapshot/bake readiness, pickup orders
 - Given selected day, overview shows orders/items-to-bake/total and per-item ordered-vs-limit with available/sold-out messaging.
 - Given pickup orders screen, date/filters/slot groups and "X of Y slots booked" display correctly.
 - Given order in prep with unpaid, "Payment pending" and "Confirm Venmo payment" available; confirming updates payment state per server.
-- Given "Mark ready & notify", order becomes ready and notification flow triggered/reported per API; UI updates.
+- Given "Mark ready & notify", recipient count/list is available from server preview, order becomes ready, notification flow is triggered/reported per API, and UI updates.
 - Given ready order, "Mark picked up" completes it.
 - Given bake list, counts match active bakeable orders.
 - Given 409/network errors, state refreshed and user informed.
@@ -95,8 +97,8 @@ Provide bakery operations views: overview snapshot/bake readiness, pickup orders
 ## Test plan
 
 - Unit: filter/status mapping, capacity math, money formatting.
-- MockWebServer: list/detail, payment, ready/complete/cancel/delay, bake list/summary.
-- Compose UI: chips/slots/cards/actions, confirmations, error states.
+- MockWebServer: list/detail, payment, ready/complete/cancel/delay, bake list/summary, recipient preview.
+- Compose UI: chips/slots/cards/actions, recipient count chip and preview panel, confirmations, error states.
 - Accessibility: badges, action labels, readable kitchen/ops layout.
 
 ## Security checklist
@@ -125,6 +127,6 @@ Overview and pickup-orders flows match design and enable day-of operations: moni
 
 ## Handoff notes
 
-- A7 covers broader notification management/queue visibility; A6 wires in-flow "mark ready & notify" actions.
+- A7 covers broader notification management/queue visibility and owns the shared recipient preview panel; A6 wires in-flow "mark ready & notify" actions and consumes that panel.
 - A8 adds push deep links to orders.
 - Ensure filter labels ("To prep"/"Ready") map explicitly to backend statuses in implementation/spec updates if enums differ.

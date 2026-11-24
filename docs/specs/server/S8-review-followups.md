@@ -3,7 +3,7 @@
 - Status: ready
 - Depends on: S7
 - Contract: `docs/api/openapi.yaml` → Public config, Customer orders, Notification preferences, Admin devices, Admin notifications
-- Next: follow-up phases S9–S12 (routed here, not yet specified); W5/W7/W8/A7/A8 coordination
+- Next: S9 is the final specified server phase (metrics, recipient preview, dummy test image); items below remain unnumbered backlog; W5/W7/W8/A7/A8 coordination
 - Owner decisions: recorded 2026-11-19 in the phase review
 
 ## Goal
@@ -156,22 +156,22 @@ Canonical fingerprint input: menu date ID, pickup window ID, trimmed order notes
 
 ## Follow-up register (all routed, none implemented here)
 
-Proposed destination phases are placeholders; create their specs when work starts.
+Proposed backlog routes are placeholders; create specs if work starts.
 
 | Route | Carried item | Source |
 |---|---|---|
-| S9 verification & closeout | Run `/phase-gate S7`; sign the 14 unchecked security-checklist items; record probes, scans, restore drill, E2E flow | `S7-hardening-deploy.md:337-350,239-268,310-322` |
-| S9 | Replace in-memory `RateLimiter` or document single-instance assumption; reconcile edge WAF rules | `S7:76-81`, `RateLimiter.java:11-14` |
-| S9 | Decide `ORDER_CANCELLED_BY_SYSTEM` vs reused `ORDER_CANCELLED_BY_ADMIN`; update consumers | `S7:99`, `S5:464` |
-| S9 | Close remaining S5 test gaps: fixed `Clock` expiry, whole-menu cancellation, concurrent same-key replay, blank name/unverified contact/merged qty >99/notes caps | `S5:468`, `S7:254-262` |
-| S9 | Access token remains valid after logout/contact change until JWT expiry; decide revalidation policy | `RequestAuthenticationFilter.java:113-131`, `SessionService.java:82-95` |
-| S9 | Local DB defaults, Gradle wrapper fallback, JSON log encoder, access logging | `S1-foundation.md:190-193` |
-| S9 | Test-profile provider-config skip; hardcoded bakery name in message copy; `boolean[]` preference tuple | `S6:23-26,339` |
-| S10 media & data hygiene | Media cache purge policy/probe; add reconciliation job (runbook only today); true `lockAndCheckActive` race test | `S7:106-108`, `S3:154,158`, `S4:374` |
-| S10 | Original-media-filename retention decision/forward migration; drop dead FCM columns | `S7:110`, `Media.java:26-27` |
-| S10 | Dependency digest pinning and image/dependency scan artifacts | `S7:111`, `build.gradle.kts:45-48` |
-| S11 developer tooling | Repeatable yamllint/hadolint/Spectral/OpenAPI/gitleaks check; operation-ID assertion; coverage threshold; optional Spotless/PMD/ErrorProne | `S7:328-333`, `S5:466`, `S6:23` |
-| S12 provider review | Evaluate AWS SES (email) + SNS/End User Messaging (SMS) vs Mailgun+Textbee; include US A2P 10DLC registration cost and Textbee device-reliability risk | Owner decision D4 |
+| Backlog — verification & closeout | Run `/phase-gate S7`; sign the 14 unchecked security-checklist items; record probes, scans, restore drill, E2E flow | `S7-hardening-deploy.md:337-350,239-268,310-322` |
+| Backlog | Replace in-memory `RateLimiter` or document single-instance assumption; reconcile edge WAF rules | `S7:76-81`, `RateLimiter.java:11-14` |
+| Backlog | Decide `ORDER_CANCELLED_BY_SYSTEM` vs reused `ORDER_CANCELLED_BY_ADMIN`; update consumers | `S7:99`, `S5:464` |
+| Backlog | Close remaining S5 test gaps: fixed `Clock` expiry, whole-menu cancellation, concurrent same-key replay, blank name/unverified contact/merged qty >99/notes caps | `S5:468`, `S7:254-262` |
+| Backlog | Access token remains valid after logout/contact change until JWT expiry; decide revalidation policy | `RequestAuthenticationFilter.java:113-131`, `SessionService.java:82-95` |
+| Backlog | Local DB defaults, Gradle wrapper fallback, JSON log encoder, access logging | `S1-foundation.md:190-193` |
+| Backlog | Test-profile provider-config skip; hardcoded bakery name in message copy; `boolean[]` preference tuple | `S6:23-26,339` |
+| Backlog — media & data hygiene | Media cache purge policy/probe; add reconciliation job (runbook only today); true `lockAndCheckActive` race test | `S7:106-108`, `S3:154,158`, `S4:374` |
+| Backlog | Original-media-filename retention decision/forward migration; drop dead FCM columns | `S7:110`, `Media.java:26-27` |
+| Backlog | Dependency digest pinning and image/dependency scan artifacts | `S7:111`, `build.gradle.kts:45-48` |
+| Backlog — developer tooling | Repeatable yamllint/hadolint/Spectral/OpenAPI/gitleaks check; operation-ID assertion; coverage threshold; optional Spotless/PMD/ErrorProne | `S7:328-333`, `S5:466`, `S6:23` |
+| Backlog — provider review | Evaluate AWS SES (email) + SNS/End User Messaging (SMS) vs Mailgun+Textbee; include US A2P 10DLC registration cost and Textbee device-reliability risk | Owner decision D4 |
 | W5 client | Send `client_submitted_at` on order create; generate a new key after user edits | This spec, API changes |
 | W7 client | Consent chooser, all-off disclosure using server copy, per-event labels | This spec, `W7-history-cancel-prefs.md:116` |
 | W8 client | Web image for full-stack HTTPS verification; 10 MB proxy cap and security headers | `W8-pwa-hardening.md:195`, `S3:135,164` |

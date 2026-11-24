@@ -21,10 +21,10 @@ If a phase requires a contract change, update the spec and OpenAPI in the same p
 ### Server
 
 ```text
-S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8
+S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9
 ```
 
-S7 can validate the API/Postgres/Cloudflare stack after S6. Full-stack HTTPS verification of the customer web container waits for W8, which owns `web/Dockerfile` and `web/nginx.conf`. S8 records the owner review decisions, the phase-completion audit, and the follow-up register; S9–S12 are planned follow-up phases listed in that register and are not yet specified.
+S7 can validate the API/Postgres/Cloudflare stack after S6. Full-stack HTTPS verification of the customer web container waits for W8, which owns `web/Dockerfile` and `web/nginx.conf`. S8 records the owner review decisions, the phase-completion audit, and the follow-up register. S9 is the final specified server phase: metrics export, recipient preview, and the dummy server test image. Older deferred items in S8 stay unnumbered backlog.
 
 Deferred findings are tracked in the [S8 follow-up register](server/S8-review-followups.md#follow-up-register-all-routed-none-implemented-here). S1–S6 are marked `implemented (follow-ups routed)`, S7 is `implemented, verification pending`, and every phase header links to that register. S8 gate results live in [the S8 gate table](server/S8-review-followups.md#s8-gate-results).
 
@@ -44,6 +44,7 @@ Web dependencies:
 - W7 needs S5 + S6.
 - W8 needs all prior phases.
 - W5 and W7 consume S8's `client_submitted_at` and notification disclosure contract.
+- W1 consumes S9's dummy server image contract for functional tests.
 
 ### Admin Android
 
@@ -61,6 +62,8 @@ Android dependencies:
 - A6 needs S5 + S6.
 - A7 needs S6.
 - A8 needs S6 + S7; A7/A8 must absorb S8's FCM removal, single-active-device rule, and one-hostname routing.
+- A1 consumes S9's dummy server image contract for functional tests.
+- A3, A6, and A7 consume S9's recipient-preview contract.
 
 A phase may start only when its dependencies are merged and their tests pass.
 
@@ -211,7 +214,8 @@ Local profile behavior:
 | S5 | `server/S5-orders-inventory.md` | Orders, atomic reservation, expiry, cancel/reject, bake list |
 | S6 | `server/S6-notifications-payments.md` | Payment state, Mailgun, Textbee, outbox, scheduler (FCM removed in S8) |
 | S7 | `server/S7-hardening-deploy.md` | Security hardening, deploy, runbooks, e2e/load tests (ops simplified in S8) |
-| S8 | `server/S8-review-followups.md` | Owner review: isolation proof, submission timestamps, consent disclosure, single hostname, Mailgun/Textbee admin alerts, minimal LXC ops, [follow-up register](server/S8-review-followups.md#follow-up-register-all-routed-none-implemented-here) |
+| S8 | `server/S8-review-followups.md` | Owner review: isolation proof, submission timestamps, consent disclosure, single hostname, Mailgun/Textbee admin alerts, minimal LXC ops, follow-up routing |
+| S9 | `server/S9-observability-audience-preview-test-image.md` | Prometheus metrics, admin recipient preview, self-contained dummy server image for client functional tests |
 | W1 | `web/W1-scaffold.md` | React/Vite scaffold, design system, API client |
 | W2 | `web/W2-auth-profile.md` | OTP login, session, profile, contact verification |
 | W3 | `web/W3-menu-browse.md` | Weekly menu browse: dates/pickup, cutoff, availability, inline basket |

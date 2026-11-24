@@ -1,8 +1,8 @@
 # W1 — Customer Web Scaffold, Design System, and API Client
 
 - Status: ready
-- Depends on: S1
-- Contract: `docs/api/openapi.yaml` → `getPublicConfig`
+- Depends on: S1, S9
+- Contract: `docs/api/openapi.yaml` → `getPublicConfig`; `docs/specs/server/S9-observability-audience-preview-test-image.md` → dummy server image
 - Next: W2
 
 ## Goal
@@ -29,6 +29,10 @@ Create the customer React PWA foundation: build tooling, routing, design tokens,
   - Vitest + React Testing Library + MSW
   - Playwright config
   - `eslint-plugin-jsx-a11y`
+- Functional test harness:
+  - Start the S9 dummy server image from Playwright global setup; no MockWebServer for functional tests.
+  - Seed all data through the real API using S9's fixed constants, not direct DB access.
+  - Reuse one container per test worker; stop it after the run.
 - `VITE_API_BASE_URL` default empty (same origin `/api/v1`).
 - Generated API types from `docs/api/openapi.yaml` via `openapi-typescript`; commit generated types.
 - Scripts: `dev`, `build`, `preview`, `test`, `test:watch`, `e2e`, `lint`, `typecheck`, `generate:api`.
@@ -99,8 +103,9 @@ web/src/
 6. Implement config query and footer/header data.
 7. Add Money/Date utilities with America/Denver display helpers.
 8. Add Vitest/RTL/MSW and Playwright config.
-9. Add ESLint/Prettier/a11y rules and scripts.
-10. Write README and handoff notes.
+9. Wire Playwright to the S9 dummy image with API-only seeding and fixed constants.
+10. Add ESLint/Prettier/a11y rules and scripts.
+11. Write README and handoff notes.
 
 ## Acceptance criteria
 
@@ -111,6 +116,7 @@ web/src/
 - Given keyboard-only navigation, then all interactive elements are reachable and focus is visible.
 - Given `pnpm build`, then the production build succeeds with no TypeScript errors.
 - Given `pnpm test`, then unit/component tests pass.
+- Given `pnpm e2e`, then Playwright starts the S9 dummy image, seeds state through the API, and runs against it without direct DB access.
 - Given `pnpm lint`, then no errors.
 - Given a 404 route, then a helpful not-found page renders.
 
@@ -122,7 +128,7 @@ web/src/
 - Config query success/error/loading.
 - Layout snapshot/behavior at mobile and desktop.
 - Keyboard navigation smoke.
-- Playwright smoke: home loads, 404 works.
+- Playwright smoke: home loads, 404 works, dummy image starts healthy and accepts API seeding.
 
 ## Security checklist
 
@@ -155,3 +161,4 @@ The app builds and runs, the config endpoint drives the shell, primitives are re
 - W2 adds auth providers and protected routes.
 - W8 adds service worker, manifest, production nginx, and e2e expansion.
 - Keep generated API types in sync with `docs/api/openapi.yaml`.
+- Functional tests use the locally built S9 dummy image; do not add a registry dependency. MockWebServer/MSW remain for unit and component tests only.

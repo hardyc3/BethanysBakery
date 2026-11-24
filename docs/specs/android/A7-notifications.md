@@ -1,8 +1,8 @@
 # A7 — Admin Notification Controls and Queue
 
 - Status: ready
-- Depends on: A6, S6
-- Contract: `docs/api/openapi.yaml` → Admin Notifications, menu/date publish and cancel
+- Depends on: A6, S6, S9
+- Contract: `docs/api/openapi.yaml` → Admin Notifications (queue and recipient preview), menu/date publish and cancel
 - Next: A8
 
 ## Goal
@@ -24,7 +24,7 @@ In A3 publish flow (implemented here if not done):
 
 - Toggle: send new-menu notification, default ON.
 - Notification date/time: when untouched, send `notifyAt=null`/omit it so the server uses 4 days before first bake at 09:00 Denver; display the returned value. Edits send an explicit instant.
-- Preview: event type, audience count estimate if available, date/time.
+- Preview: event type, authoritative recipient count from `previewNotificationRecipients` ("X customers will be notified"), per-channel breakdown, "View recipients" action, date/time, and as-of note that the count can change before a scheduled send.
 - On publish, show whether it is scheduled or sent immediately.
 - No resend endpoint exists; to announce again, the admin must use a future spec. Explain in UI help text.
 
@@ -32,7 +32,7 @@ In A3 publish flow (implemented here if not done):
 
 - On bake date detail / bake list header:
   - "Send day-before reminder now".
-  - Confirmation with audience: opted-in customers with no `PENDING`, `ACCEPTED`, `READY`, or `COMPLETED` order for that date.
+  - Confirmation with audience from `previewNotificationRecipients`: opted-in customers with no `PENDING`, `ACCEPTED`, `READY`, or `COMPLETED` order for that date; show count/channels and allow opening the masked recipient list.
   - Prevent duplicate sends; show if already sent.
   - 202 response → show queued state.
 
@@ -40,7 +40,7 @@ In A3 publish flow (implemented here if not done):
 
 - From order detail (A6):
   - optional reason.
-  - preview: "Customer will be notified by their selected channels."
+  - preview: "Customer will be notified by their selected channels." plus server recipient count and "View recipients" for masked detail.
   - confirmation.
   - success shows `delayNotifiedAt` and reason.
 
@@ -48,7 +48,7 @@ In A3 publish flow (implemented here if not done):
 
 - From order detail:
   - reason required.
-  - preview.
+  - preview with recipient count and masked recipient detail.
   - warning: inventory is released and the customer is notified.
   - cannot be undone.
 
@@ -57,7 +57,16 @@ In A3 publish flow (implemented here if not done):
 - From A3:
   - optional reason.
   - warning: active orders are cancelled, inventory released, customers notified; refunds manual.
+  - recipient count and masked recipient list from `previewNotificationRecipients` before confirmation.
   - confirmation requires explicit acknowledgement.
+
+### Shared recipient preview panel
+
+- Opening: from any notification action in A3/A6/A7 via "View recipients".
+- Data: `previewNotificationRecipients` with event type, entity type, and entity ID; paged lazily.
+- Display: distinct customer count, EMAIL/SMS channel counts, as-of time, and paginated rows with name, masked email/phone, channels, and suppression reasons.
+- Copy: "Based on current preferences; recipients may change before a scheduled send."
+- Read-only: no mutation or retry from this panel.
 
 ### Notification queue
 
@@ -95,6 +104,7 @@ In A3 publish flow (implemented here if not done):
 - `rejectOrder`
 - `cancelMenu`
 - `cancelMenuDate`
+- `previewNotificationRecipients`
 - `listNotifications`
 - `retryNotification`
 - `getMenuDate`
@@ -107,18 +117,19 @@ In A3 publish flow (implemented here if not done):
 3. Add delay flow review/preview.
 4. Add rejection reason/preview.
 5. Add cancellation warning copy.
-6. Build notification queue list/filters.
-7. Implement retry with confirmation and refresh.
-8. Handle suppressed/failed states and sanitized errors.
-9. Add tests with MockWebServer and Compose UI.
-10. Add help text for manual resend limits.
+6. Build the shared recipient preview panel from `previewNotificationRecipients`.
+7. Build notification queue list/filters.
+8. Implement retry with confirmation and refresh.
+9. Handle suppressed/failed states and sanitized errors.
+10. Add tests with MockWebServer and Compose UI.
+11. Add help text for manual resend limits.
 
 ## Acceptance criteria
 
 - Given a draft menu, then publish shows notification ON by default and the default date/time.
 - Given notification disabled, then publish sends no menu notification.
 - Given a scheduled notification, then the menu shows the scheduled state.
-- Given a baked date, when sending a reminder, then the confirmation lists the audience rule and the response is queued.
+- Given a baked date, when sending a reminder, then the confirmation lists the audience rule, server recipient count/channels, masked recipient list, and the response is queued.
 - Given a reminder already sent, then the action is disabled with an explanation.
 - Given a delay with reason, then the customer notification is queued and the order shows delay info.
 - Given a rejection without reason, then submit is blocked.
@@ -127,11 +138,12 @@ In A3 publish flow (implemented here if not done):
 - Given failed notifications, then they appear with attempts and sanitized error.
 - Given retry, then the notification is requeued and status refreshes.
 - Given a suppressed SMS, then the reason is visible without exposing the destination.
+- Given any notification action, when "View recipients" opens, then the panel shows read-only, paged, masked recipients with an as-of note and causes no state change.
 
 ## Test plan
 
-- MockWebServer: publish with notification fields, reminder 202, delay, reject, cancel, list, retry.
-- Compose UI: confirmations, validation, disabled states, filters.
+- MockWebServer: publish with notification fields, reminder 202, delay, reject, cancel, list, retry, recipient preview success/empty/error.
+- Compose UI: confirmations, validation, disabled states, filters, recipient count chip and paged preview panel.
 - Error/409 handling.
 - Accessibility: warnings, destructive dialogs, status text.
 - Manual: verify local provider logs and admin queue.
@@ -145,6 +157,7 @@ In A3 publish flow (implemented here if not done):
 - [ ] No notification retry for non-admin.
 - [ ] No PII in logs.
 - [ ] Server-side idempotency relied on.
+- [ ] Recipient preview is read-only and shows masked destinations only.
 
 ## Quality gate
 
@@ -173,3 +186,4 @@ Bethany can intentionally send or suppress announcements, reminders, delays, rej
   not a push transport.
 - Message copy lives in server templates; app shows previews only.
 - If resend is added later, update OpenAPI and this spec together.
+- A3 and A6 consume the recipient preview panel defined here; keep it shared instead of duplicating recipient-list UI.
