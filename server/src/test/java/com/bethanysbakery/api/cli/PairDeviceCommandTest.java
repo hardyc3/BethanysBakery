@@ -52,4 +52,46 @@ class PairDeviceCommandTest {
         assertThat(output).contains("PAIR-CODE-123", "15 minutes");
         verify(pairingService).createPairingCode("cli");
     }
+
+    @Test
+    void rendersJsonPairingQrWithExactAppUrls() {
+        BakeryProperties.Auth auth = new BakeryProperties.Auth(
+                TestProperties.JWT_SECRET,
+                TestProperties.ENCRYPTION_KEY,
+                null,
+                null,
+                "Cf-Authenticated-Client-Cert",
+                "Cf-Authenticated-Client-Cert-Verified",
+                false,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                "https://example.com",
+                "https://bakery.cherry-home.com/admin/v1",
+                "https://bakery.cherry-home.com/admin/v1/devices/pair");
+        BakeryProperties properties = new BakeryProperties(
+                "Test Bakery",
+                "America/Denver",
+                "123 Test St",
+                "https://maps.google.com/?q=123+Test+St",
+                "test@example.com",
+                12,
+                auth,
+                new BakeryProperties.AdminApp("1.0.0", "1.0.0", "https://example.com/admin.apk", null),
+                new BakeryProperties.Venmo(null, null));
+        when(pairingService.createPairingCode("cli")).thenReturn("PAIR-CODE-123");
+        PairDeviceCommand command = new PairDeviceCommand(pairingService, qr, properties);
+
+        command.run(Map.of());
+
+        verify(qr).render("{\"v\":1,\"pairUrl\":\"https://bakery.cherry-home.com/admin/v1/devices/pair\","
+                + "\"apiUrl\":\"https://bakery.cherry-home.com/admin/v1\",\"code\":\"PAIR-CODE-123\"}");
+    }
 }
