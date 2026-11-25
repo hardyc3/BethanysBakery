@@ -1236,6 +1236,29 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/NotificationList' }
 
+  /admin/v1/notifications/recipient-preview:
+    post:
+      tags: [Admin Notifications]
+      operationId: previewNotificationRecipients
+      summary: Preview recipients and channels for one customer notification event
+      security: [{ adminBearer: [], deviceApiKey: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/Size' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationRecipientPreviewRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationRecipientPreview' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /admin/v1/notifications/{notificationId}/retry:
     post:
       tags: [Admin Notifications]
@@ -2266,6 +2289,48 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/Notification' }
+        total: { type: integer }
+
+    NotificationRecipientPreviewRequest:
+      type: object
+      required: [eventType, entityType, entityId]
+      properties:
+        eventType: { $ref: '#/components/schemas/NotificationEventType' }
+        entityType: { type: string, enum: [MENU, MENU_DATE, ORDER] }
+        entityId: { type: string, format: uuid }
+    RecipientChannelCounts:
+      type: object
+      required: [email, sms]
+      properties:
+        email: { type: integer }
+        sms: { type: integer }
+    RecipientPreviewItem:
+      type: object
+      required: [customerId, name, channels, emailMasked, phoneMasked, reasons]
+      properties:
+        customerId: { type: string, format: uuid }
+        name: { type: string }
+        channels:
+          type: array
+          items: { type: string, enum: [EMAIL, SMS] }
+        emailMasked: { type: string }
+        phoneMasked: { type: string }
+        reasons:
+          type: array
+          items: { type: string }
+    NotificationRecipientPreview:
+      type: object
+      required: [eventType, asOf, customerCount, channelCounts, items, page, size, total]
+      properties:
+        eventType: { $ref: '#/components/schemas/NotificationEventType' }
+        asOf: { type: string, format: date-time }
+        customerCount: { type: integer }
+        channelCounts: { $ref: '#/components/schemas/RecipientChannelCounts' }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RecipientPreviewItem' }
+        page: { type: integer }
+        size: { type: integer }
         total: { type: integer }
 
     AuditEvent:

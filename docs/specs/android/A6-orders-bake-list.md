@@ -127,6 +127,7 @@ Overview and pickup-orders flows match design and enable day-of operations: moni
 
 ## Handoff notes
 
-- A7 covers broader notification management/queue visibility and owns the shared recipient preview panel; A6 wires in-flow "mark ready & notify" actions and consumes that panel.
+- A7 covers broader notification management/queue visibility and owns the shared recipient preview panel; A6 wires in-flow "mark ready & notify" actions and consumes that panel. For order events (`ORDER_ACCEPTED`, `ORDER_READY`, `ORDER_DELAYED`, `ORDER_REJECTED`, `ORDER_CANCELLED`, `ORDER_EXPIRED`), send `entityType=ORDER` with the order UUID. Show the server's `customerCount`, `channelCounts`, `asOf`, and masked rows; never derive recipients locally.
+- S9 dummy image smoke seeding uses API-only calls with fixed device key `dummy-device-key`, admin `admin@dummy.local` / `DummyAdmin!234`, TOTP secret `JBSWY3DPEHPK3PXP`, and customer OTP `123456`. CSRF token comes from `GET /api/v1/auth/csrf`; no database or provider access.
 - A8 adds push deep links to orders.
 - Ensure filter labels ("To prep"/"Ready") map explicitly to backend statuses in implementation/spec updates if enums differ.

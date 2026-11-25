@@ -22,7 +22,7 @@ public class CookieService {
     private final BakeryProperties.Auth config;
 
     public CookieService(Environment env, BakeryProperties properties) {
-        this.secure = !env.acceptsProfiles(Profiles.of("local", "test"));
+        this.secure = !env.acceptsProfiles(Profiles.of("local", "test", "dummy"));
         this.config = properties.auth();
     }
 

@@ -21,7 +21,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 @Component
-@Profile("!local")
+@Profile("!local & !dummy")
 public class MailgunEmailSender implements EmailSender {
 
     private final NotificationProperties properties;

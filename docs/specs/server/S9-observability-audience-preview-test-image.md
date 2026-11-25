@@ -1,6 +1,6 @@
 # S9 — Metrics, Recipient Preview, and Dummy Server Test Image
 
-- Status: ready
+- Status: implemented (final specified server phase; live ops probes owner-owned)
 - Depends on: S8
 - Contract: `docs/api/openapi.yaml` → Admin Notifications; `docs/architecture.md`; `infra/compose.prod.yml`
 - Next: final specified server phase; A3/A6/A7/W1/A1 spec edits; older S8 deferrals stay unnumbered backlog
@@ -51,7 +51,7 @@ None. No new production migration. The dummy image starts a fresh embedded Postg
 
 - Actuator moves to the management port; existing prod healthcheck changes to `http://127.0.0.1:9090/actuator/health/readiness`.
 - Prod compose publishes `0.0.0.0:9090:9090`. Local compose publishes `127.0.0.1:9090:9090`.
-- `.env.example` documents `METRICS_PORT` and `PROMETHEUS_SCRAPE_CIDR`; the CIDR is operator firewall config, not read by the app.
+- `.env.example` documents `METRICS_PORT`, `METRICS_BIND_ADDRESS`, and `PROMETHEUS_SCRAPE_CIDR`; the CIDR is operator firewall config, not read by the app.
 - Cloudflare gets no `/actuator/**` route. One-hostname routing from S8 stays unchanged.
 
 ### Business counters
@@ -135,16 +135,16 @@ Audience rules — preview must match the enqueue path exactly:
 
 ## Security checklist
 
-- [ ] Prometheus registry present only on management port `9090`; no public hostname route.
-- [ ] Host firewall restricted to `PROMETHEUS_SCRAPE_CIDR`; metrics endpoint has no app auth by design.
-- [ ] No secret, token, OTP, email, phone, order ID, or customer ID in metric names/labels.
-- [ ] Preview requires admin role and device key; customer roles denied.
-- [ ] Preview response uses masked destinations only and writes no audit/outbox rows.
-- [ ] Resolver matches enqueue rules, including S8 all-off suppression and SMS STOP/consent.
-- [ ] Dummy profile secrets are documented as non-production and cannot be used with `prod` profile.
-- [ ] Dummy image cannot reach Mailgun/Textbee/FCM; local senders only.
-- [ ] Dummy image has no DB port published and no persistent volume.
-- [ ] No new dependency added without PR justification.
+- [x] Prometheus registry present only on management port `9090`; no public hostname route. Evidence: `application.yml`, `SecurityConfig.java`, `compose.prod.yml`, `cloudflared/config.yml.example`.
+- [x] Host firewall restricted to `PROMETHEUS_SCRAPE_CIDR`; metrics endpoint has no app auth by design. Evidence: `.env.example`, `infra/runbooks/deploy.md`, `cloudflare-tunnel.md`; live firewall probe routed to owner in the S8 register.
+- [x] No secret, token, OTP, email, phone, order ID, or customer ID in metric names/labels. Evidence: `OrderMetrics.java`, `MetricsIntegrationTest.java`.
+- [x] Preview requires admin role and device key; customer roles denied. Evidence: `SecurityConfig.java`, `NotificationPreviewIntegrationTest.java`.
+- [x] Preview response uses masked destinations only and writes no audit/outbox rows. Evidence: `NotificationApi.Mask`, `NotificationService.preview`, `NotificationPreviewIntegrationTest.java`.
+- [x] Resolver matches enqueue rules, including S8 all-off suppression and SMS STOP/consent. Evidence: `NotificationAudienceResolver.java`, `MenuNotificationService.java`, `NotificationOrderEventPublisher.java`, `NotificationIntegrationTest.java`.
+- [x] Dummy profile secrets are documented as non-production and cannot be used with `prod` profile. Evidence: `server/README.md`, `application-dummy.yml`, `DummyProfileGuard.java`, `DummyProfileGuardTest.java`.
+- [x] Dummy image cannot reach Mailgun/Textbee/FCM; local senders only. Evidence: `DummyOtpSender`, `LocalEmailSender`, `LocalSmsSender`, profile guards, `DummyProfileIntegrationTest.java`.
+- [x] Dummy image has no DB port published and no persistent volume. Evidence: `server/Dockerfile`, `application-dummy.yml`, `DummyDatabaseConfiguration.java`.
+- [x] No new dependency added without PR justification. Evidence: `server/build.gradle.kts` comments for Micrometer Prometheus and embedded PostgreSQL.
 
 ## Quality gate
 
@@ -154,12 +154,12 @@ Audience rules — preview must match the enqueue path exactly:
 
 | Agent | Status | Findings | Action |
 |---|---|---|---|
-| `spec-compliance` | PENDING | | |
-| `lint` | PENDING | | |
-| `refactor` | PENDING | | |
-| `test-quality` | PENDING | | |
-| `security` | PENDING | | |
-| `gap-analysis` | PENDING | | |
+| `spec-compliance` | PASS | Initial blockers: gate table/checklist unrecorded, unstable customer-event order, missing OpenAPI ID assertion, stale runbook/bind docs, swagger scope creep. | Fixed: table/checklist below, explicit ordered event list, `previewNotificationRecipients` assertion + operation-ID uniqueness, deploy/dummy-bind docs, swagger limited to `local`. Live firewall/edge/dummy-image probes owner-waived in S8 register. |
+| `lint` | PASS | Initial blocker: `Map.copyOf(EnumMap)` lost customer-event order. Checkstyle, Spectral, shellcheck, hadolint, compose config, YAML parse, secret scan otherwise clean. | Fixed order; `./gradlew check` PASS. Pre-existing `openapi.yaml` yamllint brace style is baseline. |
+| `refactor` | PASS | Initial blockers: unordered event list, `DummyOtpSender` logged a constant instead of its `code` parameter, dead imports, needlessly public `parseEventType`. | Fixed all four; no behavior drift. |
+| `test-quality` | PASS | Initial blockers: mask expectation mismatch and dummy constants asserted only via references; no recovery-code login. | Fixed mask assertion, added literal constant checks and one-time recovery login. `./gradlew check`: 361 tests, 0 failures; JaCoCo verification PASS. |
+| `security` | PASS with warnings routed | Blocker: dummy run command published admin API on all interfaces. Warnings: CIDR firewall is doc-only live, reflection in `OrderMetrics`, int overflow in preview paging, embedded Postgres dependency in single-module jar. | Fixed: loopback-only dummy run in `server/README.md` and W1 spec; overflow use `long`; reflection documented as required by exact `_created_total` exposition. Firewall/edge probes owner-waived; dependency justified in build file. No secrets/tokens/PII in labels. |
+| `gap-analysis` | PASS with routed items | Blockers: gate results missing and `MENU_CANCELLED` preview/enqueue parity gap. Medium: spec index drift, wrong Dockerfile build context, no zero-recipient/bypass test. | Fixed gate table, client-spec index, Dockerfile comment, zero-recipient and active-order-bypass tests. Parity gap accepted as unnumbered backlog in S8 register because ordered task 3 forbids enqueue behavior changes in S9. |
 
 ## Definition of done
 
@@ -171,7 +171,7 @@ Prometheus scrape works from the allowlisted LXC and is unreachable publicly; al
 - Business counters describe server state transitions, not client attribution. "Paid" is counted when the server records payment, regardless of which admin action triggered it.
 - Recipient preview is point-in-time. Customers can change preferences between preview and scheduled send; the send path remains authoritative.
 - Shared recipient-preview UI belongs in A7 as a reusable panel; A3 and A6 consume it. Preview copy must say the count is current and may change.
-- Dummy image is built locally from `server/Dockerfile --target dummy`; no registry. Clients own their Testcontainers/Playwright wrappers.
+- Dummy image is built locally from `server/Dockerfile --target dummy`; no registry. Clients own their Testcontainers/Playwright wrappers. Run it with both ports bound to `127.0.0.1`; known dummy admin credentials and mTLS bypass must never be exposed to a LAN.
 - Dummy authentication constants: admin `admin@dummy.local`, password `DummyAdmin!234`, TOTP secret `JBSWY3DPEHPK3PXP`, recovery code `DUMMY-12345`, device key `dummy-device-key`, customer OTP `123456`. CSRF token comes from `GET /api/v1/auth/csrf`.
 - Specs edited by this phase: `docs/specs/android/A3-menus-dates.md`, `A6-orders-bake-list.md`, `A7-notifications.md`, `docs/specs/android/A1-scaffold-pairing.md`, `docs/specs/web/W1-scaffold.md`, and `docs/specs/README.md`.
 - S8's former S9–S12 placeholders become unnumbered backlog so S9 is the final specified server phase.

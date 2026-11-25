@@ -24,13 +24,24 @@ spring:
       max-request-size: ${MEDIA_MAX_REQUEST_BYTES:11534336}
 
 management:
+  server:
+    port: ${METRICS_PORT:9090}
+    address: ${METRICS_BIND_ADDRESS:0.0.0.0}
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,prometheus
   endpoint:
     health:
       probes:
+        enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+  prometheus:
+    metrics:
+      export:
         enabled: true
 
 bakery:

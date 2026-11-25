@@ -88,12 +88,13 @@ public class OrderService {
     private final DataSource dataSource;
     private final EntityManager entityManager;
     private final Clock clock;
+    private final OrderMetrics metrics;
 
     public OrderService(OrderRepository orders, CustomerRepository customers, MenuDateRepository dates,
             PickupWindowRepository windows, OfferingRepository offerings, MenuTimeRules time,
             OrderPricing pricing, InventoryService inventory, AuditService audit, OutboxWriter outbox,
             OrderEventPublisher publisher, OrderViews views, JdbcTemplate jdbc, DataSource dataSource,
-            EntityManager entityManager, Clock clock) {
+            EntityManager entityManager, Clock clock, OrderMetrics metrics) {
         this.orders = orders;
         this.customers = customers;
         this.dates = dates;
@@ -110,6 +111,7 @@ public class OrderService {
         this.dataSource = dataSource;
         this.entityManager = entityManager;
         this.clock = clock;
+        this.metrics = metrics;
     }
 
     // -- creation ---------------------------------------------------------
@@ -183,6 +185,7 @@ public class OrderService {
             flushAndClear();
             log.info("order_submission_timestamps clientSubmittedAt={} serverReceivedAt={} orderId={}",
                 instantText(clientSubmittedAt), instantText(serverReceivedAt), orderId);
+            metrics.created();
             return new Created(views.order(orders.findById(orderId).orElseThrow()), true);
         } catch (DuplicateKeyException ex) {
             if (!isIdempotencyConflict(ex)) throw ex;
@@ -511,6 +514,7 @@ public class OrderService {
         audit.record(ActorType.ADMIN, adminId, "ORDER_REJECTED", "ORDER", orderId,
             Map.of("status", "PENDING"), Map.of("status", "REJECTED", "reason", trimmed));
         publisher.orderRejected(refresh(orderId), trimmed);
+        metrics.rejected();
         return viewAfterWrite(orderId);
     }
 
@@ -525,6 +529,7 @@ public class OrderService {
         audit.record(ActorType.ADMIN, adminId, "ORDER_READY", "ORDER", orderId,
             Map.of("status", "ACCEPTED"), Map.of("status", "READY"));
         publisher.orderReady(refresh(orderId));
+        metrics.ready();
         return viewAfterWrite(orderId);
     }
 
@@ -592,6 +597,7 @@ public class OrderService {
             throw conflict("INVALID_STATE", "Order status changed concurrently");
         }
         inventory.release(orderId);
+        metrics.cancelled();
     }
 
     @Transactional
@@ -614,6 +620,7 @@ public class OrderService {
             Map.of("status", "PENDING"), Map.of("status", "EXPIRED", "at", now.toString()));
         publisher.orderExpired(refresh(orderId));
         flushAndClear();
+        metrics.expired();
     }
 
     @Transactional

@@ -32,8 +32,14 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    // S9 observability: expose order lifecycle counters to the separate Grafana LXC.
+    implementation("io.micrometer:micrometer-registry-prometheus")
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
+    // Dummy target only: fresh embedded PostgreSQL for client functional tests.
+    implementation("io.zonky.test:embedded-postgres:2.1.0") {
+        exclude(group = "org.slf4j")
+    }
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.8")
     implementation("com.nimbusds:nimbus-jose-jwt:9.47")
     implementation("dev.samstevens.totp:totp:1.7.1")

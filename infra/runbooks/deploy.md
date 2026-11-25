@@ -11,6 +11,8 @@ Prerequisites
   (`cloudflare-tunnel.md`).
 - Owner has taken a Proxmox full-container snapshot before risky changes.
   Admin alert destinations are masked in API responses and logs.
+- `PROMETHEUS_SCRAPE_CIDR` is set in the mode-600 `.env` and the LXC firewall
+  allows tcp/9090 only from that CIDR before the stack is exposed.
 
 Commands (no deploy scripts; raw git + Compose inside the LXC)
 ```bash
@@ -27,8 +29,10 @@ Flyway migrations run at API startup. One API replica only. The stack is
 Verification
 ```bash
 docker compose -f infra/compose.prod.yml --env-file /opt/bethanys-bakery/.env \
-  exec -T api curl -fsS http://127.0.0.1:8080/actuator/health/readiness
+  exec -T api curl -fsS http://127.0.0.1:9090/actuator/health/readiness
 curl -fsS https://bakery.cherry-home.com/api/v1/config
+sudo ufw status numbered | grep 9090
+curl -fsS http://127.0.0.1:9090/actuator/prometheus | grep -F 'bakery_orders_created_total'
 curl -sS -o /dev/null -w '%{http_code}\n' \
   -H 'CF-IPCountry: CA' https://bakery.cherry-home.com/api/v1/config          # 403 COUNTRY_BLOCKED
 curl -sS -o /dev/null -w '%{http_code}\n' \
@@ -39,12 +43,15 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 curl -sS -o /dev/null -w '%{http_code}\n' \
   https://bakery.cherry-home.com/admin/v1/devices/pair                        # reaches origin (rate limited)
 docker compose -f infra/compose.prod.yml --env-file /opt/bethanys-bakery/.env \
-  ps --format '{{.Names}} {{.Ports}}' | grep -E '0\.0\.0\.0|::' || echo 'no published ports'
+  ps --format '{{.Names}} {{.Ports}}' | grep -F '0.0.0.0:9090->9090/tcp'
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  https://bakery.cherry-home.com/actuator/prometheus                             # 404, no edge route
 ```
 - Admin API with a valid device cert/key plus `X-Device-Key` returns 200 on
   `/admin/v1/app-info`; without them it is blocked at edge or returns 401 at origin.
 - External-network origin probe in `cloudflare-tunnel.md` must show the origin
   unreachable except through Cloudflare.
+- A source outside `PROMETHEUS_SCRAPE_CIDR` cannot connect to tcp/9090.
 - Logs contain no OTP, token, email, phone, or secret; alert destinations are masked.
 
 Deferred verification

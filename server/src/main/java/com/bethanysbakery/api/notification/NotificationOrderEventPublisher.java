@@ -1,20 +1,14 @@
 package com.bethanysbakery.api.notification;
 
 import com.bethanysbakery.api.config.BakeryProperties;
-import com.bethanysbakery.api.domain.auth.Customer;
-import com.bethanysbakery.api.domain.auth.CustomerRepository;
-import com.bethanysbakery.api.domain.auth.CustomerStatus;
 import com.bethanysbakery.api.domain.menu.MenuDate;
 import com.bethanysbakery.api.domain.notification.NotificationEventType;
 import com.bethanysbakery.api.domain.order.Actor;
 import com.bethanysbakery.api.domain.order.Order;
-import com.bethanysbakery.api.domain.order.OrderRepository;
 import com.bethanysbakery.api.order.OutboxWriter;
 import java.time.Clock;
 import java.time.Instant;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 
@@ -24,17 +18,15 @@ public class NotificationOrderEventPublisher implements com.bethanysbakery.api.o
 
     private final NotificationService notifications;
     private final OutboxWriter outbox;
-    private final OrderRepository orders;
-    private final CustomerRepository customers;
+    private final NotificationAudienceResolver audience;
     private final BakeryProperties bakery;
     private final Clock clock;
 
     public NotificationOrderEventPublisher(NotificationService notifications, OutboxWriter outbox,
-            OrderRepository orders, CustomerRepository customers, BakeryProperties bakery, Clock clock) {
+            NotificationAudienceResolver audience, BakeryProperties bakery, Clock clock) {
         this.notifications = notifications;
         this.outbox = outbox;
-        this.orders = orders;
-        this.customers = customers;
+        this.audience = audience;
         this.bakery = bakery;
         this.clock = clock;
     }
@@ -77,35 +69,17 @@ public class NotificationOrderEventPublisher implements com.bethanysbakery.api.o
     @Override
     public void menuDateCancelled(MenuDate date, String reason) {
         Instant now = clock.instant();
-        Set<UUID> activeOrderCustomers = new HashSet<>();
-        orders.findAllByMenuDate_IdAndStatusIn(date.getId(), NotificationRules.ACTIVE_ORDER_STATUSES)
-            .forEach(order -> activeOrderCustomers.add(order.getCustomerId()));
-        Set<UUID> optedInCustomers = new HashSet<>();
-        for (Customer customer : customers.findAllByStatus(CustomerStatus.ACTIVE)) {
-            if (notifications.isOptedIn(customer.getId(), NotificationEventType.MENU_CANCELLED)) {
-                optedInCustomers.add(customer.getId());
-            }
-        }
-        Set<UUID> fullyOptedOut = new HashSet<>();
-        for (UUID customerId : activeOrderCustomers) {
-            if (notifications.hasAllNotificationsDisabled(customerId)) {
-                fullyOptedOut.add(customerId);
-            }
-        }
-        Set<UUID> recipients = new HashSet<>(activeOrderCustomers);
-        recipients.removeAll(fullyOptedOut);
-        recipients.addAll(optedInCustomers);
         Map<String, Object> payload = NotificationPayloads.forMenuCancelled("MENU_DATE", date.getId(),
             date.getBakeDate(), baseUrl());
-        for (UUID customerId : recipients) {
+        for (NotificationAudienceResolver.Recipient recipient
+                : audience.resolve(NotificationEventType.MENU_CANCELLED, "MENU_DATE", date.getId(), payload)) {
+            UUID customerId = recipient.customerId();
             String key = NotificationKeys.menuCancelled(date.getId(), customerId);
             outbox.write("MENU_DATE", date.getId(), "MENU_CANCELLED",
                 Map.of("menuDateId", date.getId().toString(), "customerId", customerId.toString()),
                 key, now);
-            // Active orders bypass the event preference; an explicit all-off PUT removes the recipient.
-            boolean activeOrder = activeOrderCustomers.contains(customerId);
             notifications.enqueueCustomer(customerId, NotificationEventType.MENU_CANCELLED, "MENU_DATE",
-                date.getId(), key, payload, now, activeOrder);
+                date.getId(), key, payload, now, recipient.bypassPreferences());
         }
     }
 

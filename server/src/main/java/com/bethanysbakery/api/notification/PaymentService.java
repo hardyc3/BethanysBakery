@@ -9,6 +9,7 @@ import com.bethanysbakery.api.domain.audit.ActorType;
 import com.bethanysbakery.api.domain.notification.NotificationEventType;
 import com.bethanysbakery.api.domain.order.Order;
 import com.bethanysbakery.api.domain.order.OrderRepository;
+import com.bethanysbakery.api.order.OrderMetrics;
 import com.bethanysbakery.api.order.OrderViews;
 import com.bethanysbakery.api.order.OutboxWriter;
 import jakarta.persistence.EntityManager;
@@ -39,10 +40,12 @@ public class PaymentService {
     private final NotificationProperties properties;
     private final EntityManager entityManager;
     private final Clock clock;
+    private final OrderMetrics metrics;
 
     public PaymentService(OrderRepository orders, JdbcTemplate jdbc, AuditService audit,
             NotificationService notifications, OutboxWriter outbox, OrderViews views,
-            BakeryProperties bakery, NotificationProperties properties, EntityManager entityManager, Clock clock) {
+            BakeryProperties bakery, NotificationProperties properties, EntityManager entityManager, Clock clock,
+            OrderMetrics metrics) {
         this.orders = orders;
         this.jdbc = jdbc;
         this.audit = audit;
@@ -53,6 +56,7 @@ public class PaymentService {
         this.properties = properties;
         this.entityManager = entityManager;
         this.clock = clock;
+        this.metrics = metrics;
     }
 
     @Transactional
@@ -88,6 +92,7 @@ public class PaymentService {
                     bakery.venmo().handle(), bakery.venmo().displayName()));
             audit.record(ActorType.ADMIN, adminId, "ORDER_PAID", "ORDER", orderId, before,
                 Map.of("paymentStatus", "PAID", "paymentMethod", method, "paidAt", now.toString()));
+            metrics.paid();
         } else {
             jdbc.update("""
                 UPDATE orders SET payment_status = 'UNPAID', paid_at = NULL, payment_method = NULL, updated_at = ?
@@ -129,6 +134,7 @@ public class PaymentService {
         audit.record(ActorType.ADMIN, adminId, "ORDER_DELAY_NOTIFIED", "ORDER", orderId,
             Map.of("delayNotifiedAt", String.valueOf(order.getDelayNotifiedAt())),
             Map.of("delayNotifiedAt", now.toString(), "delayReason", detail));
+        metrics.delayed();
     }
 
     private void clear() {

@@ -187,3 +187,5 @@ Bethany can intentionally send or suppress announcements, reminders, delays, rej
 - Message copy lives in server templates; app shows previews only.
 - If resend is added later, update OpenAPI and this spec together.
 - A3 and A6 consume the recipient preview panel defined here; keep it shared instead of duplicating recipient-list UI.
+- S9 contract for the panel: `POST /admin/v1/notifications/recipient-preview?page=0&size=20` with `eventType`, `entityType` (`MENU`/`MENU_DATE`/`ORDER`), `entityId`. Response: `eventType`, `asOf`, `customerCount`, `channelCounts` (`EMAIL`/`SMS`), paged `items[]` (`customerId`, `name`, `channels[]`, `emailMasked`, `phoneMasked`, `reasons[]`), `page`, `size`, `total`. Admin-only, read-only, no outbox/audit/state/provider side effects. `ORDER_PAID` and `ADMIN_NEW_ORDER` are invalid for preview. Copy must say the count is current and may change before a scheduled send.
+- S9 dummy image API-only seeding uses admin `admin@dummy.local` / `DummyAdmin!234`, TOTP secret `JBSWY3DPEHPK3PXP`, recovery code `DUMMY-12345`, device key `dummy-device-key`, and customer OTP `123456`; CSRF comes from `GET /api/v1/auth/csrf`.

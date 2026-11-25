@@ -9,8 +9,10 @@ in this repo. No CI/CD, registry, or staging environment.
 
 - `compose.dev.yml` — local development: PostgreSQL 16 + API.
 - `compose.prod.yml` — the production stack on the LXC: `web`, `api`, `postgres`,
-  `cloudflared`. No host ports are published. The tunnel exposes one hostname
-  with path ingress: `/admin/v1` → `api:8080`, `/api` → `api:8080`, `/` → `web:80`.
+  `cloudflared`. The only published host port is metrics (`0.0.0.0:9090`), gated
+  by the owner firewall (`PROMETHEUS_SCRAPE_CIDR`). The tunnel exposes one
+  hostname with path ingress: `/admin/v1` → `api:8080`, `/api` → `api:8080`,
+  `/` → `web:80`. No `/actuator/**` route exists at the edge.
 - `cloudflared/config.yml.example` — route reference for the named tunnel. WAF,
   geo, and path-scoped mTLS rules are owned by the runbooks.
 - `.env.example` — local-safe defaults plus production variables. `setup-alpine.sh`
@@ -38,7 +40,8 @@ docker compose -f compose.dev.yml --env-file .env.example up --build
 ```
 
 - Postgres exposed on `127.0.0.1:5432` only.
-- API on `http://localhost:8080`.
+- API on `http://localhost:8080`; actuator/Prometheus on `http://127.0.0.1:9090`
+  (`/actuator/health/readiness`, `/actuator/prometheus`).
 - Config via env vars; defaults in `compose.dev.yml`, example in `.env.example`.
 - Uploaded images persist in named volume `media-data`, mounted at `/data/media`
   in the API container. Managed by `MEDIA_ROOT` / `MEDIA_MAX_UPLOAD_BYTES`.
@@ -51,6 +54,7 @@ One-time host setup, then deploy from the repo checkout inside the LXC:
 sudo ./setup-alpine.sh                         # once; idempotent
 # Fill tunnel token, Mailgun/Textbee secrets, ADMIN_ALERT_EMAIL and
 # ADMIN_ALERT_PHONE in /opt/bethanys-bakery/.env (mode 600).
+# Restrict tcp/9090 to PROMETHEUS_SCRAPE_CIDR before exposing metrics.
 # Upload the device CA to Cloudflare (runbooks/cloudflare-mtls-ca.md).
 
 cd /opt/bethanys-bakery

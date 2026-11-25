@@ -77,7 +77,7 @@ class AdminDeviceServiceTest {
             Uuids.v7(), UUID.randomUUID(), "Pixel", DevicePlatform.ANDROID, "public-key-pem",
             fingerprint, crypto.sha256Hex(API_KEY), Instant.now().minusSeconds(3600), "1.0.0"
         );
-        when(environment.acceptsProfiles(Profiles.of("local", "test"))).thenReturn(false);
+        when(environment.acceptsProfiles(Profiles.of("local", "test", "dummy"))).thenReturn(false);
     }
 
     @Test
@@ -149,7 +149,7 @@ class AdminDeviceServiceTest {
     }
 
     @Test
-    void bypassRequiresLocalProfileAndExplicitFlag() {
+    void bypassRequiresNonProductionProfileAndExplicitFlag() {
         BakeryProperties bypass = new BakeryProperties(
             "Test", "America/Denver", "addr", "https://maps", "t@example.com", 12,
             TestProperties.auth(true), new BakeryProperties.AdminApp("1.0.0", "1.0.0", "https://example.com/a", null),
@@ -160,10 +160,10 @@ class AdminDeviceServiceTest {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-Device-Key", API_KEY);
 
-        when(environment.acceptsProfiles(Profiles.of("local", "test"))).thenReturn(true);
+        when(environment.acceptsProfiles(Profiles.of("local", "test", "dummy"))).thenReturn(true);
         assertThat(service(bypass).authenticate(request).getId()).isEqualTo(device.getId());
 
-        when(environment.acceptsProfiles(Profiles.of("local", "test"))).thenReturn(false);
+        when(environment.acceptsProfiles(Profiles.of("local", "test", "dummy"))).thenReturn(false);
         assertUnauthorized(service(bypass), request);
     }
 

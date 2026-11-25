@@ -61,7 +61,7 @@ public class CertificateAuthority {
 
     public CertificateAuthority(BakeryProperties properties, Environment env) {
         this.config = properties.auth();
-        this.ephemeralAllowed = env.acceptsProfiles(Profiles.of("local", "test"));
+        this.ephemeralAllowed = env.acceptsProfiles(Profiles.of("local", "test", "dummy"));
     }
 
     public IssuedCertificate issue(String csrPem, String deviceName, Duration ttl) {

@@ -59,7 +59,7 @@ public class AdminDeviceService {
         if (apiKey == null || apiKey.isBlank()) {
             throw AuthException.unauthorized("Device key required");
         }
-        boolean bypass = config.localBypass() && env.acceptsProfiles(Profiles.of("local", "test"));
+        boolean bypass = config.localBypass() && env.acceptsProfiles(Profiles.of("local", "test", "dummy"));
         AdminDevice device;
         if (bypass) {
             device = devices.findByApiKeyHash(crypto.sha256Hex(apiKey))

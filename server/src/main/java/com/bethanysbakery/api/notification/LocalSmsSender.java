@@ -9,7 +9,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 @Component
-@Profile("local")
+@Profile({"local", "dummy"})
 public class LocalSmsSender implements SmsSender {
 
     private static final Logger log = LoggerFactory.getLogger(LocalSmsSender.class);

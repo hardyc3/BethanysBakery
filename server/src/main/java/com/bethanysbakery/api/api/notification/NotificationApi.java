@@ -38,6 +38,17 @@ public final class NotificationApi {
 
     public record TextbeeWebhook(String from, String message, String providerMessageId, Instant receivedAt) {}
 
+    public record NotificationRecipientPreviewRequest(String eventType, String entityType, UUID entityId) {}
+
+    public record RecipientChannelCounts(long email, long sms) {}
+
+    public record RecipientPreviewItem(UUID customerId, String name, List<String> channels,
+            String emailMasked, String phoneMasked, List<String> reasons) {}
+
+    public record NotificationRecipientPreview(String eventType, Instant asOf, long customerCount,
+            RecipientChannelCounts channelCounts, List<RecipientPreviewItem> items,
+            int page, int size, long total) {}
+
     public static NotificationView view(com.bethanysbakery.api.domain.notification.Notification notification) {
         List<NotificationDeliveryView> deliveries = notification.getDeliveries().stream()
             .map(delivery -> new NotificationDeliveryView(
@@ -91,6 +102,9 @@ public final class NotificationApi {
         }
 
         public static String email(String value) {
+            if (value == null || value.isBlank()) {
+                return "***";
+            }
             int at = value.indexOf('@');
             if (at <= 0) {
                 return "***";
@@ -101,10 +115,16 @@ public final class NotificationApi {
         }
 
         public static String phone(String value) {
+            if (value == null || value.isBlank()) {
+                return "***";
+            }
             return value.length() <= 4 ? "***" : "***" + value.substring(value.length() - 4);
         }
 
         public static String token(String value) {
+            if (value == null || value.isBlank()) {
+                return "***";
+            }
             return value.length() <= 4 ? "***" : "***" + value.substring(value.length() - 4);
         }
     }
