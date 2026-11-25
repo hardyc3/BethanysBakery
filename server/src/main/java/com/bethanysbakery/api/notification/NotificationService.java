@@ -1,6 +1,7 @@
 package com.bethanysbakery.api.notification;
 
 import com.bethanysbakery.api.api.notification.NotificationApi;
+import com.bethanysbakery.api.api.notification.NotificationApi.Mask;
 import com.bethanysbakery.api.api.notification.NotificationApi.NotificationPreferenceView;
 import com.bethanysbakery.api.api.notification.NotificationApi.NotificationPreferencesView;
 import com.bethanysbakery.api.api.notification.NotificationApi.NotificationPreferencesWrite;
@@ -29,8 +30,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HexFormat;
@@ -59,9 +58,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class NotificationService {
 
     private static final Logger log = LoggerFactory.getLogger(NotificationService.class);
-    private static final Map<NotificationEventType, boolean[]> DEFAULTS = defaults();
 
     private final NotificationRepository notifications;
+    private final NotificationAudienceResolver audience;
     private final NotificationPreferenceRepository preferences;
     private final CustomerRepository customers;
     private final OrderRepository orders;
@@ -72,11 +71,12 @@ public class NotificationService {
     private final Clock clock;
     private final Environment environment;
 
-    public NotificationService(NotificationRepository notifications,
+    public NotificationService(NotificationRepository notifications, NotificationAudienceResolver audience,
             NotificationPreferenceRepository preferences, CustomerRepository customers, OrderRepository orders,
             AuditService audit, BakeryProperties bakery, NotificationProperties properties, ObjectMapper mapper,
             Clock clock, Environment environment) {
         this.notifications = notifications;
+        this.audience = audience;
         this.preferences = preferences;
         this.customers = customers;
         this.orders = orders;
@@ -159,27 +159,15 @@ public class NotificationService {
         Notification notification = new Notification(RecipientType.CUSTOMER,
             customerId, null, eventType, entityType, entityId, key, payload, now,
             scheduledAt == null ? now : scheduledAt);
-        if (hasAllNotificationsDisabled(customerId)) {
+        if (audience.hasAllNotificationsDisabled(customerId)) {
             // An explicit all-off PUT suppresses the row itself, including transactional notices.
             notification.markSuppressed("ALL_NOTIFICATIONS_DISABLED");
             return notification;
         }
         Customer customer = customers.findById(customerId).orElse(null);
-
-        boolean[] pref = preference(customerId, eventType);
-        if (bypassPreferences) {
-            pref = new boolean[] {true, true};
-        }
-        if (pref[0] && customer != null && customer.isEmailVerified() && customer.getEmail() != null) {
-            notification.addDelivery(new NotificationDelivery(notification, NotificationChannel.EMAIL, customer.getEmail()));
-        }
-        if (pref[1] && customer != null && customer.hasSmsConsent() && customer.getPhoneE164() != null) {
-            LocalDate bakeDate = NotificationRules.promotional(eventType)
-                ? NotificationRules.bakeDate(payload) : null;
-            if (bakeDate == null || !SmsWindow.bakeDatePassed(bakeDate, now, zone())) {
-                // Quiet hours are enforced by the dispatcher so email is not delayed with SMS.
-                notification.addDelivery(new NotificationDelivery(notification, NotificationChannel.SMS,
-                    customer.getPhoneE164()));
+        if (customer != null) {
+            for (NotificationChannel channel : audience.channels(customerId, eventType, payload, bypassPreferences)) {
+                addDelivery(notification, channel, customer);
             }
         }
         if (notification.getDeliveries().isEmpty()) {
@@ -190,7 +178,7 @@ public class NotificationService {
 
     /** One logical MENU_PUBLISHED message fans out to many customer deliveries. */
     @Transactional
-    public Notification enqueueMenuPublished(UUID menuId, List<Customer> recipients, Map<String, Object> payload) {
+    public Notification enqueueMenuPublished(UUID menuId, Map<String, Object> payload) {
         String key = NotificationKeys.menuPublished(menuId);
         Optional<Notification> existing = notifications.findByIdempotencyKey(key);
         if (existing.isPresent()) {
@@ -199,15 +187,10 @@ public class NotificationService {
         Instant now = clock.instant();
         Notification notification = new Notification(RecipientType.CUSTOMER,
             null, null, NotificationEventType.MENU_PUBLISHED, "MENU", menuId, key, payload, now, now);
-        for (Customer customer : recipients) {
-            boolean[] pref = preference(customer.getId(), NotificationEventType.MENU_PUBLISHED);
-            if (pref[0] && customer.isEmailVerified() && customer.getEmail() != null) {
-                notification.addDelivery(new NotificationDelivery(notification, NotificationChannel.EMAIL,
-                    customer.getEmail()));
-            }
-            if (pref[1] && customer.hasSmsConsent() && customer.getPhoneE164() != null) {
-                notification.addDelivery(new NotificationDelivery(notification, NotificationChannel.SMS,
-                    customer.getPhoneE164()));
+        for (NotificationAudienceResolver.Recipient recipient
+                : audience.resolve(NotificationEventType.MENU_PUBLISHED, "MENU", menuId, payload)) {
+            for (NotificationChannel channel : recipient.channels()) {
+                addDelivery(notification, channel, recipient.email(), recipient.phone());
             }
         }
         if (notification.getDeliveries().isEmpty()) {
@@ -281,6 +264,34 @@ public class NotificationService {
             result.getTotalElements());
     }
 
+    /** Read-only audience preview. Resolver output is the same one the enqueue path consumes. */
+    @Transactional(readOnly = true)
+    public NotificationApi.NotificationRecipientPreview preview(String eventType, String entityType,
+            UUID entityId, int page, int size) {
+        NotificationEventType type = parseEventType(eventType);
+        List<NotificationAudienceResolver.Recipient> recipients =
+            audience.resolve(type, entityType, entityId, null);
+        int safePage = Math.max(0, page);
+        int safeSize = Math.min(100, Math.max(1, size));
+        long offset = (long) safePage * safeSize;
+        int from = (int) Math.min(offset, recipients.size());
+        int to = (int) Math.min(offset + safeSize, recipients.size());
+        List<NotificationApi.RecipientPreviewItem> items = recipients.subList(from, to).stream()
+            .map(recipient -> new NotificationApi.RecipientPreviewItem(
+                recipient.customerId(),
+                recipient.name(),
+                recipient.channels().stream().map(Enum::name).toList(),
+                Mask.email(recipient.email()),
+                Mask.phone(recipient.phone()),
+                List.copyOf(recipient.reasons())))
+            .toList();
+        long emailCount = recipients.stream().filter(r -> r.channels().contains(NotificationChannel.EMAIL)).count();
+        long smsCount = recipients.stream().filter(r -> r.channels().contains(NotificationChannel.SMS)).count();
+        return new NotificationApi.NotificationRecipientPreview(type.name(), clock.instant(), recipients.size(),
+            new NotificationApi.RecipientChannelCounts(emailCount, smsCount), items, safePage, safeSize,
+            recipients.size());
+    }
+
     @Transactional
     public Notification retry(UUID notificationId, UUID adminId) {
         Notification notification = notifications.findById(notificationId)
@@ -350,7 +361,7 @@ public class NotificationService {
 
     /** Admin-triggered retries must fail fast when a required provider is not configured. */
     private void verifyProvidersConfigured(Notification notification) {
-        if (environment.acceptsProfiles(Profiles.of("local", "test"))) {
+        if (environment.acceptsProfiles(Profiles.of("local", "test", "dummy"))) {
             return;
         }
         Set<NotificationChannel> channels = notification.getDeliveries().stream()
@@ -371,7 +382,7 @@ public class NotificationService {
         List<NotificationPreferenceView> result = new ArrayList<>();
         for (NotificationEventType type : customerEvents()) {
             NotificationPreference pref = stored.get(type);
-            boolean[] value = pref == null ? DEFAULTS.get(type)
+            boolean[] value = pref == null ? NotificationRules.preference(preferences, customerId, type)
                 : new boolean[] {pref.isEmailEnabled(), pref.isSmsEnabled()};
             result.add(new NotificationPreferenceView(type.name(), value[0], value[1]));
         }
@@ -380,32 +391,32 @@ public class NotificationService {
 
     /** True when the customer has email or SMS enabled for this event (explicit or default). */
     public boolean isOptedIn(UUID customerId, NotificationEventType type) {
-        boolean[] value = preference(customerId, type);
-        return value[0] || value[1];
+        return audience.isOptedIn(customerId, type);
     }
 
     /** Explicit all-off PUT: every customer event must be stored with both channels disabled. */
     @Transactional(readOnly = true)
     public boolean hasAllNotificationsDisabled(UUID customerId) {
-        Map<NotificationEventType, NotificationPreference> stored = new EnumMap<>(NotificationEventType.class);
-        preferences.findAllByCustomerId(customerId).forEach(pref -> stored.put(pref.getEventType(), pref));
-        for (NotificationEventType type : customerEvents()) {
-            NotificationPreference pref = stored.get(type);
-            if (pref == null || pref.isEmailEnabled() || pref.isSmsEnabled()) {
-                return false;
-            }
-        }
-        return true;
+        return audience.hasAllNotificationsDisabled(customerId);
     }
 
     private boolean[] preference(UUID customerId, NotificationEventType type) {
-        return preferences.findByCustomerIdAndEventType(customerId, type)
-            .map(pref -> new boolean[] {pref.isEmailEnabled(), pref.isSmsEnabled()})
-            .orElseGet(() -> DEFAULTS.getOrDefault(type, new boolean[] {true, false}));
+        return NotificationRules.preference(preferences, customerId, type);
     }
 
-    private ZoneId zone() {
-        return NotificationRules.zone(bakery.timezone());
+    private void addDelivery(Notification notification, NotificationChannel channel, Customer customer) {
+        addDelivery(notification, channel,
+            channel == NotificationChannel.EMAIL ? customer.getEmail() : customer.getPhoneE164());
+    }
+
+    private void addDelivery(Notification notification, NotificationChannel channel, String email, String phone) {
+        addDelivery(notification, channel,
+            channel == NotificationChannel.EMAIL ? email : phone);
+    }
+
+    private void addDelivery(Notification notification, NotificationChannel channel, String destination) {
+        // Quiet hours are enforced by the dispatcher so email is not delayed with SMS.
+        notification.addDelivery(new NotificationDelivery(notification, channel, destination));
     }
 
     private String appBaseUrl() {
@@ -430,25 +441,7 @@ public class NotificationService {
     }
 
     public static List<NotificationEventType> customerEvents() {
-        return List.of(NotificationEventType.MENU_PUBLISHED, NotificationEventType.ORDER_REMINDER,
-            NotificationEventType.ORDER_ACCEPTED, NotificationEventType.ORDER_READY,
-            NotificationEventType.ORDER_DELAYED, NotificationEventType.ORDER_REJECTED,
-            NotificationEventType.ORDER_CANCELLED, NotificationEventType.ORDER_EXPIRED,
-            NotificationEventType.MENU_CANCELLED);
-    }
-
-    private static Map<NotificationEventType, boolean[]> defaults() {
-        Map<NotificationEventType, boolean[]> values = new EnumMap<>(NotificationEventType.class);
-        values.put(NotificationEventType.MENU_PUBLISHED, new boolean[] {true, false});
-        values.put(NotificationEventType.ORDER_REMINDER, new boolean[] {true, false});
-        values.put(NotificationEventType.ORDER_ACCEPTED, new boolean[] {true, true});
-        values.put(NotificationEventType.ORDER_READY, new boolean[] {true, true});
-        values.put(NotificationEventType.ORDER_DELAYED, new boolean[] {true, true});
-        values.put(NotificationEventType.ORDER_REJECTED, new boolean[] {true, true});
-        values.put(NotificationEventType.ORDER_CANCELLED, new boolean[] {true, true});
-        values.put(NotificationEventType.ORDER_EXPIRED, new boolean[] {true, false});
-        values.put(NotificationEventType.MENU_CANCELLED, new boolean[] {true, true});
-        return Map.copyOf(values);
+        return NotificationRules.customerEvents();
     }
 
     private static String hmac(byte[] body, String secret) {

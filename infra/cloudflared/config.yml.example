@@ -4,6 +4,7 @@
 #
 # One public hostname only. Path prefixes select the origin service:
 #   /admin/v1 -> api:8080   /api -> api:8080   / -> web:80
+# No /actuator/** route: Prometheus scrapes the management port on the LXC host.
 #
 # Create/verify the tunnel DNS route from the Cloudflare dashboard or with:
 #   cloudflared tunnel route dns <tunnel-uuid> bakery.cherry-home.com

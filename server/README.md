@@ -25,6 +25,7 @@ Uploaded images persist in the compose volume `media-data` mounted at `/data/med
 See `../infra/.env.example`.
 - Database: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_POOL_MAX`, `DB_POOL_MIN`
 - Bakery: `BAKERY_NAME`, `BAKERY_TIMEZONE`, `BAKERY_PICKUP_ADDRESS`, `BAKERY_MAPS_URL`, `BAKERY_SUPPORT_EMAIL`, `ORDER_CUTOFF_HOURS`
+- Metrics: `METRICS_PORT` (default 9090), `METRICS_BIND_ADDRESS` (default 0.0.0.0; firewall allowlist via `PROMETHEUS_SCRAPE_CIDR`)
 - Media: `MEDIA_ROOT` (default `/data/media`), `MEDIA_MAX_UPLOAD_BYTES` (10485760 = 10 MB), `MEDIA_MAX_REQUEST_BYTES` (11534336 = 11 MB), `MEDIA_MAX_EDGE_PIXELS` (1600), `MEDIA_MAX_DECODE_PIXELS` (40000000), `MEDIA_MAX_SOURCE_EDGE` (10000)
 - Auth crypto: `JWT_SECRET`, `APP_ENCRYPTION_KEY` (base64, at least 32 bytes)
 - Device CA: `ADMIN_DEVICE_CA_CERT_PATH`, `ADMIN_DEVICE_CA_KEY_PATH`
@@ -48,12 +49,13 @@ openssl rand -base64 32   # APP_ENCRYPTION_KEY
   - `POST /api/v1/auth/otp/request` → 202 (generic response whether or not the account exists).
   - `POST /api/v1/auth/otp/verify` → sets `bb_access` and `bb_refresh` cookies.
   - Local/test profiles log the code to the server console and never send real messages.
-  - Staging/prod return `503 NOT_CONFIGURED` for OTP delivery until S6 wires providers.
+  - Dummy profile always uses OTP `123456`; no provider is contacted.
+  - Staging/prod use Mailgun/Textbee providers.
 - Customer mutations require the double-submit CSRF pair: `bb_csrf` cookie + `X-CSRF-Token` header.
   Fetch it with `GET /api/v1/auth/csrf`.
 - Access tokens are HS256 JWTs (15 min default). Refresh tokens are opaque, rotated on use, and reuse revokes the family.
 - Admin endpoints require a paired device (`X-Device-Key`) plus a bearer token.
-  - In `local`/`test`, `ADMIN_MTLS_LOCAL_BYPASS=true` skips the Cloudflare certificate headers.
+  - In `local`/`test`/`dummy`, `ADMIN_MTLS_LOCAL_BYPASS=true` skips the Cloudflare certificate headers.
   - In staging/prod, the Cloudflare-verified client certificate header is required and its SHA-256 fingerprint must match an `ACTIVE` device.
 - Revoking a device is immediate: its API key and certificate stop authenticating and all its refresh tokens are revoked.
 
@@ -80,7 +82,46 @@ cd server
 - Prints a 128-bit one-time code (hash stored, 15-minute TTL), pair URL, admin API URL, and a terminal QR code.
 - The app posts the code, device name, public key PEM, and CSR PEM to `POST /admin/v1/devices/pair`.
 - The server validates the CSR (EC P-256), signs a 180-day client certificate with the device CA, and returns the certificate, CA certificate, and a 256-bit API key once.
-- In `local`/`test`, an ephemeral device CA is generated if no CA files are configured. Staging/prod require `ADMIN_DEVICE_CA_CERT_PATH` and `ADMIN_DEVICE_CA_KEY_PATH`.
+- In `local`/`test`/`dummy`, an ephemeral device CA is generated if no CA files are configured. Staging/prod require `ADMIN_DEVICE_CA_CERT_PATH` and `ADMIN_DEVICE_CA_KEY_PATH`.
+
+## Observability and admin preview (S9)
+- Actuator and Prometheus move to `METRICS_PORT` (default 9090), separate from API 8080.
+  - Readiness: `GET http://127.0.0.1:9090/actuator/health/readiness`
+  - Scrape: `GET http://127.0.0.1:9090/actuator/prometheus`
+  - No app auth and no Cloudflare route: production restricts tcp/9090 with `PROMETHEUS_SCRAPE_CIDR`.
+  - Seven unlabeled counters: `bakery_orders_{created,paid,cancelled,ready,delayed,rejected,expired}_total`. Only committed state transitions increment; replays, conflicts, and no-ops do not.
+- `POST /admin/v1/notifications/recipient-preview?page=0&size=20` is admin-only and read-only.
+  - Body: `eventType`, `entityType` (`MENU`/`MENU_DATE`/`ORDER`), `entityId`.
+  - Response uses the same `NotificationAudienceResolver` as enqueue, with masked contacts, channel counts, reasons, and stable `(name, customerId)` pagination. It writes no notification, outbox, or audit rows.
+
+## Dummy server image (S9)
+Build locally from the `server` directory; no registry is involved.
+
+```bash
+cd server
+docker build --target dummy -t bethanys-bakery-dummy .
+docker run --rm -p 127.0.0.1:8080:8080 -p 127.0.0.1:9090:9090 bethanys-bakery-dummy
+```
+
+Startup: embedded PostgreSQL starts in the container, Flyway applies V1–V8, fixed admin/device rows are seeded, then API 8080 and management 9090 become ready (allow 2 minutes). No DB port is published and no DB volume is mounted; stopping the container discards all state. No Mailgun/Textbee/FCM credentials are needed and no provider is contacted.
+
+Fixed constants (non-production only; never use with `prod`/`staging`):
+
+| Item | Value |
+|---|---|
+| Admin email | `admin@dummy.local` |
+| Admin password | `DummyAdmin!234` |
+| Admin TOTP secret | `JBSWY3DPEHPK3PXP` |
+| Admin recovery code | `DUMMY-12345` |
+| Admin device key | `dummy-device-key` |
+| Customer OTP | `123456` |
+
+API-only seeding flow for web/Android functional tests:
+
+1. `GET /api/v1/auth/csrf`; send `bb_csrf` cookie and `X-CSRF-Token` on customer mutations.
+2. `POST /api/v1/auth/otp/request` then `/otp/verify` with `123456` to create/sign in a customer.
+3. `POST /admin/v1/auth/login` with the fixed email/password, a current TOTP from the fixed secret, and `X-Device-Key: dummy-device-key`; no pairing flow is needed.
+4. Create menus, dates, offerings, and orders through the real API only. Never connect to the embedded database.
 
 ## Package layout
 - `config` — configuration properties and web config

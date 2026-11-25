@@ -1,0 +1,59 @@
+# Non-production only. This profile starts a fresh embedded PostgreSQL, seeds
+# fixed auth material, and uses local OTP/email/SMS senders. Never combine it
+# with prod/staging or expose the resulting container publicly.
+spring:
+  main:
+    banner-mode: off
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+management:
+  server:
+    port: ${METRICS_PORT:9090}
+    address: ${METRICS_BIND_ADDRESS:0.0.0.0}
+
+bakery:
+  name: Dummy Bakery
+  timezone: America/Denver
+  pickup-address: Dummy Address
+  maps-url: https://maps.example.test
+  support-email: support@dummy.local
+  edge:
+    cloudflare-proxy: false
+  auth:
+    # Fixed keys are safe only in this profile; they decode to >=32 bytes.
+    jwt-secret: ZHVtbXktand0LXNlY3JldC0zMi1ieXRlcy1leGFjdCE=
+    app-encryption-key: ZHVtbXktZW5jLWtleS0zMi1ieXRlcy1leGFjdGx5ISE=
+    admin-mtls-local-bypass: true
+    app-public-base-url: http://localhost:8080
+    app-admin-api-url: http://localhost:8080/admin/v1
+    app-pair-url: http://localhost:8080/pair
+    otp-ttl: PT10M
+    otp-max-attempts: 5
+    otp-resend-seconds: 1
+    otp-max-sends-per-15m: 100
+  admin-app:
+    latest-version: 1.0.0
+    min-version: 1.0.0
+    download-url: http://localhost:8080/admin-app.apk
+  notifications:
+    scheduling-enabled: false
+    admin-alert-email: admin@dummy.local
+    mailgun:
+      api-key: dummy
+      domain: dummy.local
+      from: dummy@dummy.local
+    textbee:
+      base-url: http://127.0.0.1:1
+      api-key: dummy
+      device-id: dummy
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: false

@@ -72,7 +72,7 @@ public abstract class IntegrationTestBase {
     @Autowired protected com.bethanysbakery.api.auth.RateLimiter rateLimiter;
 
     @BeforeEach
-    void resetDatabase() {
+    protected void resetDatabase() {
         rateLimiter.clear();
         jdbc.execute("""
             TRUNCATE TABLE audit_event, refresh_token, otp_challenge, device_pairing,

@@ -1,6 +1,7 @@
-# Production stack on one Proxmox LXC. No host ports are published: cloudflared
-# reaches these services over internal Docker networks and exposes one public
-# hostname via Tunnel with path-based ingress (/admin/v1, /api, /).
+# Production stack on one Proxmox LXC. cloudflared reaches services over internal
+# Docker networks and exposes one public hostname via Tunnel with path-based
+# ingress (/admin/v1, /api, /). The only host port is the metrics surface on
+# 9090; owner firewall restricts it to PROMETHEUS_SCRAPE_CIDR.
 name: bethanys-bakery-prod
 
 x-logging: &default-logging
@@ -73,6 +74,8 @@ services:
       ADMIN_MTLS_HEADER: ${ADMIN_MTLS_HEADER:-Cf-Authenticated-Client-Cert}
       ADMIN_MTLS_VERIFIED_HEADER: ${ADMIN_MTLS_VERIFIED_HEADER:-Cf-Authenticated-Client-Cert-Verified}
       ADMIN_MTLS_LOCAL_BYPASS: ${ADMIN_MTLS_LOCAL_BYPASS:-false}
+      METRICS_PORT: ${METRICS_PORT:-9090}
+      METRICS_BIND_ADDRESS: 0.0.0.0
       ADMIN_ACCESS_TTL: ${ADMIN_ACCESS_TTL:-PT15M}
       ADMIN_REFRESH_TTL: ${ADMIN_REFRESH_TTL:-P14D}
       CUSTOMER_ACCESS_TTL: ${CUSTOMER_ACCESS_TTL:-PT15M}
@@ -110,6 +113,8 @@ services:
       TEXTBEE_API_KEY: ${TEXTBEE_API_KEY:-}
       TEXTBEE_DEVICE_ID: ${TEXTBEE_DEVICE_ID:-}
       TEXTBEE_WEBHOOK_SECRET: ${TEXTBEE_WEBHOOK_SECRET:-}
+    ports:
+      - "0.0.0.0:9090:9090"
     volumes:
       - media-data:/data/media
       - ${SECRETS_DIR:-/opt/bethanys-bakery/secrets}:/run/secrets:ro
@@ -124,7 +129,7 @@ services:
       - /tmp:rw,noexec,nosuid,size=64m,mode=1777
       - /var/run:rw,nosuid,size=16m,mode=1777
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/actuator/health/readiness >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9090/actuator/health/readiness >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12

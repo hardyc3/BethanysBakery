@@ -6,13 +6,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.web.server.LocalManagementPort;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -22,7 +29,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
-@SpringBootTest
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+    properties = {"bakery.notifications.scheduling-enabled=false", "management.server.port=0"})
 @AutoConfigureMockMvc
 @Testcontainers
 @ActiveProfiles("local")
@@ -44,12 +52,21 @@ class ActuatorAndDocsTest {
     @Autowired
     ObjectMapper objectMapper;
 
+    @LocalManagementPort
+    int managementPort;
+
     @Test
     void healthAndInfoAndDocsAvailableInLocal() throws Exception {
-        mvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
-        mvc.perform(get("/actuator/health/readiness")).andExpect(status().isOk());
-        mvc.perform(get("/actuator/info")).andExpect(status().isOk());
+        assertThat(managementGet("/actuator/health/liveness").statusCode()).isEqualTo(200);
+        assertThat(managementGet("/actuator/health/readiness").statusCode()).isEqualTo(200);
+        assertThat(managementGet("/actuator/info").statusCode()).isEqualTo(200);
         mvc.perform(get("/v3/api-docs")).andExpect(status().isOk());
+    }
+
+    private HttpResponse<String> managementGet(String path) throws Exception {
+        return HttpClient.newHttpClient().send(
+            HttpRequest.newBuilder(URI.create("http://localhost:" + managementPort + path)).GET().build(),
+            HttpResponse.BodyHandlers.ofString());
     }
 
     @Test
@@ -65,11 +82,20 @@ class ActuatorAndDocsTest {
         expected.put("post-/admin/v1/notifications/{notificationId}/retry", "retryNotification");
         expected.put("post-/api/v1/webhooks/textbee", "receiveTextbeeWebhook");
         expected.put("post-/admin/v1/menu-dates/{menuDateId}/remind", "sendMenuDateReminder");
+        expected.put("post-/admin/v1/notifications/recipient-preview", "previewNotificationRecipients");
         expected.forEach((key, operationId) -> {
             String[] parts = key.split("-", 2);
             assertThat(docs.at("/paths/" + jsonPointer(parts[1]) + "/" + parts[0] + "/operationId").asText())
                 .as(key).isEqualTo(operationId);
         });
+        List<String> operationIds = new ArrayList<>();
+        docs.path("paths").fields().forEachRemaining(path -> path.getValue().fields().forEachRemaining(operation -> {
+            JsonNode id = operation.getValue().get("operationId");
+            if (id != null && !id.isNull()) {
+                operationIds.add(id.asText());
+            }
+        }));
+        assertThat(operationIds).doesNotHaveDuplicates();
     }
 
     @Test

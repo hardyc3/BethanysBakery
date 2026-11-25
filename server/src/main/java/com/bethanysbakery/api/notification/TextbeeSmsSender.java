@@ -20,7 +20,7 @@ import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestTemplate;
 
 @Component
-@Profile("!local")
+@Profile("!local & !dummy")
 public class TextbeeSmsSender implements SmsSender {
 
     private final NotificationProperties properties;

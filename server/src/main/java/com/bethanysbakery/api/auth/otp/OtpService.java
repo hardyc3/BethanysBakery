@@ -28,15 +28,17 @@ public class OtpService {
     private final CustomerRepository customers;
     private final CryptoService crypto;
     private final OtpSender sender;
+    private final OtpCodeGenerator codes;
     private final RateLimiter rateLimiter;
     private final BakeryProperties.Auth config;
 
     public OtpService(OtpChallengeRepository challenges, CustomerRepository customers, CryptoService crypto,
-            OtpSender sender, RateLimiter rateLimiter, BakeryProperties properties) {
+            OtpSender sender, OtpCodeGenerator codes, RateLimiter rateLimiter, BakeryProperties properties) {
         this.challenges = challenges;
         this.customers = customers;
         this.crypto = crypto;
         this.sender = sender;
+        this.codes = codes;
         this.rateLimiter = rateLimiter;
         this.config = properties.auth();
     }
@@ -78,7 +80,7 @@ public class OtpService {
             throw AuthException.rateLimited(ipLimit.retryAfterSeconds());
         }
 
-        String code = crypto.randomDigits(6);
+        String code = codes.generate();
         String payload = customerId == null ? destination.value() : customerId + "|" + destination.value();
         OtpChallenge challenge = new OtpChallenge(
             Uuids.v7(), destination.channel(), purpose, destinationHash, crypto.encrypt(payload),

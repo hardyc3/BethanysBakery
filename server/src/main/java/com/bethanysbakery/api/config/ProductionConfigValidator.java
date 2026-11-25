@@ -14,7 +14,7 @@ import org.springframework.stereotype.Component;
 
 /** Fails startup under prod/staging when deployment security prerequisites are missing. */
 @Component
-@Profile("!local & !test")
+@Profile("!local & !test & !dummy")
 public class ProductionConfigValidator {
 
     private static final Set<String> WEAK_DB_PASSWORDS = Set.of("change-me", "changeme", "bakery", "password",

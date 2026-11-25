@@ -161,4 +161,5 @@ The app builds and runs, the config endpoint drives the shell, primitives are re
 - W2 adds auth providers and protected routes.
 - W8 adds service worker, manifest, production nginx, and e2e expansion.
 - Keep generated API types in sync with `docs/api/openapi.yaml`.
-- Functional tests use the locally built S9 dummy image; do not add a registry dependency. MockWebServer/MSW remain for unit and component tests only.
+- Functional tests use the locally built S9 dummy image (`cd server && docker build --target dummy -t bethanys-bakery-dummy .`); do not add a registry dependency. Start with `docker run --rm -p 127.0.0.1:8080:8080 -p 127.0.0.1:9090:9090 bethanys-bakery-dummy`; health is `http://127.0.0.1:9090/actuator/health/readiness`, API is `http://localhost:8080`. MockWebServer/MSW remain for unit and component tests only.
+- S9 fixed constants for API-only seeding: customer OTP `123456`; admin `admin@dummy.local` / `DummyAdmin!234`, TOTP secret `JBSWY3DPEHPK3PXP`, recovery code `DUMMY-12345`, device key `dummy-device-key`. CSRF token comes from `GET /api/v1/auth/csrf` (`bb_csrf` cookie + `X-CSRF-Token`). No DB port, volume, or provider credentials; all seed data goes through the real API and disappears with the container.

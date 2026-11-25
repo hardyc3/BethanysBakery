@@ -1,7 +1,7 @@
 # Spec-Driven Development Workflow
 
 Status: active  
-Last updated: 2026-11-18
+Last updated: 2026-11-25
 
 ## 1. Purpose
 
@@ -26,7 +26,7 @@ S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8 → S9
 
 S7 can validate the API/Postgres/Cloudflare stack after S6. Full-stack HTTPS verification of the customer web container waits for W8, which owns `web/Dockerfile` and `web/nginx.conf`. S8 records the owner review decisions, the phase-completion audit, and the follow-up register. S9 is the final specified server phase: metrics export, recipient preview, and the dummy server test image. Older deferred items in S8 stay unnumbered backlog.
 
-Deferred findings are tracked in the [S8 follow-up register](server/S8-review-followups.md#follow-up-register-all-routed-none-implemented-here). S1–S6 are marked `implemented (follow-ups routed)`, S7 is `implemented, verification pending`, and every phase header links to that register. S8 gate results live in [the S8 gate table](server/S8-review-followups.md#s8-gate-results).
+Deferred findings are tracked in the [S8 follow-up register](server/S8-review-followups.md#follow-up-register-all-routed-none-implemented-here). S1–S6 are marked `implemented (follow-ups routed)`, S7 is `implemented, verification pending`, and every phase header links to that register. S8 gate results live in [the S8 gate table](server/S8-review-followups.md#s8-gate-results). S9 records the outcome of the S8 edge-hardening, staging-profile, and OTP-log handoff rows; two remain unnumbered backlog and one has a fail-fast guard. S9's contract and gate results live in [the S9 spec](server/S9-observability-audience-preview-test-image.md#s9-gate-results).
 
 ### Customer web
 
@@ -36,7 +36,7 @@ W1 → W2 → W3 → W4 → W5 → W6 → W7 → W8
 
 Web dependencies:
 
-- W1 needs S1.
+- W1 needs S1 + S9.
 - W2 needs S2.
 - W3/W4 need S3 + S4.
 - W5 needs S5.
@@ -44,7 +44,7 @@ Web dependencies:
 - W7 needs S5 + S6.
 - W8 needs all prior phases.
 - W5 and W7 consume S8's `client_submitted_at` and notification disclosure contract.
-- W1 consumes S9's dummy server image contract for functional tests.
+- W1 consumes S9's dummy server image contract for functional tests: locally built `--target dummy`, API-only seeding, no registry, no DB access.
 
 ### Admin Android
 
@@ -54,16 +54,16 @@ A1 → A2 → A3 → A4 → A5 → A6 → A7 → A8
 
 Android dependencies:
 
-- A1 needs S1 + S2 pairing contract.
+- A1 needs S1 + S2 pairing contract + S9 dummy image.
 - A2 needs S2.
-- A3 needs S4.
+- A3 needs S4 + S9 recipient preview.
 - A4 needs S3.
 - A5 needs S4.
-- A6 needs S5 + S6.
-- A7 needs S6.
+- A6 needs S5 + S6 + S9 recipient preview.
+- A7 needs S6 + S9 recipient preview.
 - A8 needs S6 + S7; A7/A8 must absorb S8's FCM removal, single-active-device rule, and one-hostname routing.
-- A1 consumes S9's dummy server image contract for functional tests.
-- A3, A6, and A7 consume S9's recipient-preview contract.
+- A1 consumes S9's dummy server image contract for functional tests: fixed device key, no real pairing, API-only seeding.
+- A3, A6, and A7 consume S9's recipient-preview contract: authoritative masked counts from `previewNotificationRecipients`, never client-computed audiences.
 
 A phase may start only when its dependencies are merged and their tests pass.
 

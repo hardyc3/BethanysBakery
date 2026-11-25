@@ -1,8 +1,8 @@
 # A3 — Menus, Bake Dates, and Weekly Menu Editor
 
 - Status: ready
-- Depends on: A2, S4
-- Contract: `docs/api/openapi.yaml` → Admin Menus, Admin Notifications (recipient preview)
+- Depends on: A2, S4, S9
+- Contract: `docs/api/openapi.yaml` → Admin Menus, Admin Notifications (`previewNotificationRecipients`)
 - Design: `design examples/design_exmaples.json` → **Bethany · Bakery overview** (menu card/actions), **Bethany · Edit weekly menu**
 - Next: A4
 
@@ -133,4 +133,5 @@ Overview and weekly menu editor match design and allow Bethany to manage menu da
 - A4/A5 own deep template/customization and per-offering/window assignment editing; keep "Manage" links and data consistent.
 - If slot length/orders-per-slot requires model/API changes, update `docs/domain-model.md` and `docs/api/openapi.yaml` with this phase/change set.
 - Share-link behavior depends on public web route availability.
-- Recipient preview UI comes from A7's shared panel; A3 only supplies event type, entity type, and entity ID.
+- Recipient preview UI comes from A7's shared panel; A3 only supplies `eventType`, `entityType`, and `entityId`. `MENU_PUBLISHED` uses entity `MENU`; `MENU_CANCELLED` accepts `MENU` or `MENU_DATE`. Counts are authoritative and point-in-time: show `customerCount`, `channelCounts`, `asOf`, and the note that recipients may change before a scheduled send. Never recompute the audience on the client.
+- S9 dummy image smoke seeding uses API-only calls with admin `admin@dummy.local` / `DummyAdmin!234`, device key `dummy-device-key`, TOTP secret `JBSWY3DPEHPK3PXP`, recovery code `DUMMY-12345`, and customer OTP `123456`; CSRF comes from `GET /api/v1/auth/csrf`.

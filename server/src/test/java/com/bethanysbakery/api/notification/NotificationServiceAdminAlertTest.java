@@ -39,6 +39,7 @@ class NotificationServiceAdminAlertTest {
     private static final UUID ORDER_ID = UUID.fromString("00000000-0000-0000-0000-000000000099");
 
     @Mock NotificationRepository notifications;
+    @Mock NotificationAudienceResolver audience;
     @Mock NotificationPreferenceRepository preferences;
     @Mock CustomerRepository customers;
     @Mock OrderRepository orders;
@@ -50,7 +51,7 @@ class NotificationServiceAdminAlertTest {
     void withoutAdminPhoneOnlyEmailAlertIsQueued() {
         NotificationProperties properties = new NotificationProperties(
             false, "admin@example.com", null, null, null);
-        NotificationService service = new NotificationService(notifications, preferences, customers, orders,
+        NotificationService service = new NotificationService(notifications, audience, preferences, customers, orders,
             audit, TestProperties.defaults(), properties, mapper,
             Clock.fixed(Instant.parse("2026-11-20T12:00:00Z"), ZoneOffset.UTC), environment);
         Order order = mock(Order.class);
@@ -74,7 +75,7 @@ class NotificationServiceAdminAlertTest {
     void withAdminPhoneQueuesEmailAndSmsWithDistinctKeys() {
         NotificationProperties properties = new NotificationProperties(
             false, "admin@example.com", "+15551234567", null, null);
-        NotificationService service = new NotificationService(notifications, preferences, customers, orders,
+        NotificationService service = new NotificationService(notifications, audience, preferences, customers, orders,
             audit, TestProperties.defaults(), properties, mapper,
             Clock.fixed(Instant.parse("2026-11-20T12:00:00Z"), ZoneOffset.UTC), environment);
         Order order = mock(Order.class);

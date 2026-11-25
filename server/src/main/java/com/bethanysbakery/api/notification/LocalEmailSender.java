@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 /** Local profile: render/print messages, never call a network provider. */
 @Component
-@Profile("local")
+@Profile({"local", "dummy"})
 public class LocalEmailSender implements EmailSender {
 
     private static final Logger log = LoggerFactory.getLogger(LocalEmailSender.class);

@@ -95,7 +95,7 @@ hostname is hardcoded in application code.
 - springdoc OpenAPI
 - Jakarta Validation
 - Testcontainers, JUnit 5
-- Actuator health
+- Actuator health and Prometheus registry on a separate management port
 - Runtime image: `eclipse-temurin:21-jre` (glibc required by the `webp-imageio` WebP writer JNI library; the build stage stays Alpine)
 
 ### Customer web
@@ -190,7 +190,9 @@ staging hostname and no pair/admin-api hostname.
 `/admin/v1/devices/pair` is mTLS-exempt, rate limited at the edge, and returns
 409 `INVALID_STATE` if a device is already active. `/api/v1/webhooks/textbee`
 is unauthenticated at the edge and HMAC-signature-verified at the origin.
-Cloudflare Tunnel is the only ingress; no inbound ports on the Proxmox host.
+Cloudflare Tunnel is the only *public* ingress. The sole LXC host port is
+`0.0.0.0:9090/actuator/prometheus` for the Grafana LXC; the owner firewall allows
+only `PROMETHEUS_SCRAPE_CIDR`. There is no `/actuator/**` edge route.
 Cloudflare handles HTTPS certificates. No hostname is hardcoded in app code;
 `EdgeRequestFilter` matches paths only.
 
@@ -201,7 +203,8 @@ All services run in one Alpine Proxmox LXC via `infra/compose.prod.yml`:
 - `web`: nginx (W8 image; `httpd:2.4-alpine` placeholder until then), serves the
   React build. Its `/api` proxy is for local development only — production
   ingress routes `/api` directly to `api:8080`.
-- `api`: Spring Boot, exposes `8080` only on the internal Docker network.
+- `api`: Spring Boot; `8080` is internal-only, `9090` is published to the host
+  for firewall-restricted Prometheus scraping.
 - `postgres`: PostgreSQL 16, internal network only, named volume.
 - `cloudflared`: outbound tunnel, configured from `CLOUDFLARE_TUNNEL_TOKEN`.
 - No backup profile container and no staging project.
@@ -218,7 +221,7 @@ Volumes (inside the LXC, included in Proxmox container backups):
 
 Healthchecks:
 
-- `api`: `GET /actuator/health/readiness`
+- `api`: `GET /actuator/health/readiness` on management port `9090`
 - `postgres`: `pg_isready`
 - `web`: `GET /`
 - `cloudflared`: process check
@@ -436,11 +439,14 @@ Configuration groups:
 
 - JSON logs to stdout, Docker `json-file` with rotation.
 - Request ID in response header `X-Request-Id` and logs.
-- Actuator: liveness, readiness, info.
-- Healthchecks in Compose.
-- Admin notification failure list and retry action.
-- Audit log viewer API.
-- No Prometheus/Grafana stack in scope. Optional host-level uptime check.
+- Actuator: liveness, readiness, info on `9090`; `/actuator/prometheus` is
+  app-unauthenticated and firewall-restricted to `PROMETHEUS_SCRAPE_CIDR`.
+- Seven unlabeled order lifecycle counters: `bakery_orders_{created,paid,
+  cancelled,ready,delayed,rejected,expired}_total`, incremented only on commit.
+- HTTP request percentile histogram; JVM, Hikari, and DB series from Micrometer.
+- Healthchecks in Compose. Admin notification failure list, retry action, and
+  read-only masked recipient preview.
+- Audit log viewer API. No metric labels carrying customer, order, or contact data.
 - No in-repo backup script or drill; the owner verifies Proxmox snapshot scope
   and recovery.
 
@@ -470,7 +476,7 @@ disabled and logged to console. OTP codes appear in API logs only in the
 
 ## 18. Phase map
 
-- Server: S1 foundation, S2 auth/devices, S3 catalog/media, S4 menus/offerings/windows, S5 orders/inventory, S6 payments/notifications, S7 hardening/deploy, S8 review follow-ups.
+- Server: S1 foundation, S2 auth/devices, S3 catalog/media, S4 menus/offerings/windows, S5 orders/inventory, S6 payments/notifications, S7 hardening/deploy, S8 review follow-ups, S9 metrics/recipient preview/dummy image (final specified phase).
 - Customer web: W1 scaffold, W2 auth/profile, W3 menu, W4 item detail, W5 cart/checkout, W6 confirmation/status, W7 history/cancel/preferences, W8 PWA/hardening.
 - Admin Android: A1 scaffold/pairing bootstrap, A2 login/device, A3 menus/dates, A4 item templates, A5 offerings/windows, A6 orders/bake list, A7 notifications, A8 push/release (FCM removed by S8).
 
@@ -489,7 +495,8 @@ disabled and logged to console. OTP codes appear in API logs only in the
 | D9 | Payment state separate from fulfillment state | Venmo manual, cash at pickup possible |
 | D10 | USA-only best-effort | Cloudflare geo + origin check |
 | D11 | No embedded web API secret | Web apps cannot keep secrets |
-| D12 | Eight server phases | Keep code reviews reviewable; S8 routes review follow-ups |
+| D12 | Nine server phases | Keep code reviews reviewable; S8 routes review follow-ups; S9 is final |
 | D13 | One public hostname with path-scoped ingress and mTLS | Fewer DNS/tunnel/rule surfaces; pair path exempt from mTLS |
 | D14 | No Firebase/FCM; Mailgun email and optional Textbee SMS for admin alerts | No Firebase project or service account to operate |
 | D15 | Proxmox full-container backups only | Owner manages backups/builds at container level; no pg_dump/restic/staging |
+| D16 | Prometheus on a separate host port, not a second hostname | Keep one public hostname; restrict scrape source at the host firewall |

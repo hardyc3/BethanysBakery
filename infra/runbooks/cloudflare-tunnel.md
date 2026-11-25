@@ -8,7 +8,9 @@ hardcoded in application code.
 Prerequisites
 - Cloudflare account with `cherry-home.com`; Zero Trust tunnel token available.
 - `CLOUDFLARE_TUNNEL_TOKEN` set in `/opt/bethanys-bakery/.env` (mode 600).
-- No host firewall rule publishes 80/443/8080/5432; compose has no `ports:`.
+- No host firewall rule publishes 80/443/8080/5432. Compose publishes only
+  `0.0.0.0:9090:9090`, gated by `PROMETHEUS_SCRAPE_CIDR`. No tunnel ingress for
+  `/actuator/**`.
 
 Console setup
 1. Zero Trust → Networks → Tunnels → Create tunnel. Copy token into `.env`.
@@ -71,17 +73,20 @@ curl -sS -o /dev/null -w '%{http_code}\n' \
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST \
   https://bakery.cherry-home.com/api/v1/webhooks/textbee \
   -H 'Content-Type: application/json' -H 'X-Textbee-Signature: bad' --data '{}'   # 401 at origin, not geo-blocked
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  https://bakery.cherry-home.com/actuator/prometheus                             # 404, no edge route
 ```
 
 External-network origin probe (run from cellular/home ISP, NEVER from inside the tunnel network)
 ```bash
 ORIGIN_IP=<lxc-public-ip>
-for p in 80 443 8080 5432; do
+for p in 80 443 8080 5432 9090; do
   timeout 3 nc -zv "$ORIGIN_IP" "$p" 2>&1 || echo "$p closed/filtered"
 done
 ```
-Expected: every direct port is refused/filtered; only the Cloudflare hostname
-serves traffic. Cloudflare WAF geo block must not affect provider webhooks.
+Expected: 80/443/8080/5432 are refused/filtered and 9090 is refused/filtered
+from any source outside `PROMETHEUS_SCRAPE_CIDR`; only the Cloudflare hostname
+serves public traffic. Cloudflare WAF geo block must not affect webhooks.
 
 Rollback
 - Revert the rule in Cloudflare (save the previous rule expression first) or

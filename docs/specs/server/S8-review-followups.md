@@ -27,17 +27,17 @@ Close the owner review findings without changing the order reservation model: pr
 
 ## Phase completion audit
 
-No phase header has been flipped from `Status: ready` (S1:3 through S7:3). Evidence from gates and git:
+S1–S7 headers were subsequently flipped to implemented status; the table records the evidence and carried items at S8 completion. S9 is the final specified server phase, so former S10–S12 placeholders are unnumbered backlog.
 
 | Phase | Delivered | Not complete / carried |
 |---|---|---|
-| S1 | Foundation, local compose, OpenAPI, errors (commit `11354ac`). | No gate results; all 8 checklist boxes unchecked (`S1-foundation.md:153-160`); local DB defaults and Gradle wrapper fallback remain. Routed to S9/S11. |
+| S1 | Foundation, local compose, OpenAPI, errors (commit `11354ac`). | No gate results; all 8 checklist boxes unchecked (`S1-foundation.md:153-160`); local DB defaults and Gradle wrapper fallback remain. Routed to S9/backlog. |
 | S2 | Auth, OTP, sessions, device pairing, audit; 6 gates PASS (`S2-auth-devices.md:266-275`). | 11 checklist boxes unchecked; in-memory per-IP limiter; dev-compose secret/bypass handoff. Routed to S9. This phase adds the one-active-device invariant. |
-| S3 | Catalog/media; gate findings table (`S3-catalog-media.md:151-168`). | Orphan files, cache purge, original filename, dependency pinning, proxy upload cap. Routed to S10/S11/W8. |
-| S4 | Menus/offerings; 6 gates PASS (`S4-menus-offerings.md:357-366`). | True media-reference race test, regenerated snapshot IDs, sparse `photoVariants`, test backlog. Routed to S10/client phases. |
+| S3 | Catalog/media; gate findings table (`S3-catalog-media.md:151-168`). | Orphan files, cache purge, original filename, dependency pinning, proxy upload cap. Routed to backlog/W8. |
+| S4 | Menus/offerings; 6 gates PASS (`S4-menus-offerings.md:357-366`). | True media-reference race test, regenerated snapshot IDs, sparse `photoVariants`, test backlog. Routed to backlog/client phases. |
 | S5 | Orders/inventory; 6 gates PASS (`S5-orders-inventory.md:440-449`). | Audit action naming, 5 test gaps, operation-ID assertion. Routed to S9. This phase proves isolation and adds submission tracking. |
-| S6 | Payments/notifications; 9 gate rows PASS (`S6-notifications-payments.md:331-344`). | Non-blocking code debt, test-profile provider skip, hardcoded brand. Routed to S9/S12. This phase removes FCM. |
-| S7 | 73 files, 19 runbooks, prod/staging compose, scripts, validator, tooling (`d46f85d`). | No `/phase-gate S7` results; all 14 checklist boxes unchecked (`S7-hardening-deploy.md:337-350`); no executed probes/scans/restore drill; W8 web image missing. Routed to S9/S10/S11/W8. |
+| S6 | Payments/notifications; 9 gate rows PASS (`S6-notifications-payments.md:331-344`). | Non-blocking code debt, test-profile provider skip, hardcoded brand. Routed to S9/backlog. This phase removes FCM. |
+| S7 | 73 files, 19 runbooks, prod/staging compose, scripts, validator, tooling (`d46f85d`). | No `/phase-gate S7` results; all 14 checklist boxes unchecked (`S7-hardening-deploy.md:337-350`); no executed probes/scans/restore drill; W8 web image missing. Routed to S9/backlog/W8. |
 
 Deliverable: flip S1–S6 headers to `Status: implemented (follow-ups routed)` and S7 to `Status: implemented, verification pending`, each with a link to the register below. Do not alter their acceptance criteria.
 
@@ -59,7 +59,7 @@ Add only:
 - `orders.request_fingerprint varchar(64) NULL` — lowercase SHA-256 hex of the canonical request (see below).
 - `CREATE UNIQUE INDEX uq_admin_device_single_active ON admin_device ((status)) WHERE status = 'ACTIVE';` — enforces one active admin device. Migration must fail with an explicit message if more than one device is `ACTIVE`; operator revokes extras before deploy.
 
-Do not drop `admin_device.fcm_token` / `fcm_updated_at` here; dead columns are harmless and their removal is routed to S10. Do not edit V1–V7.
+Do not drop `admin_device.fcm_token` / `fcm_updated_at` here; dead columns are harmless and their removal is routed to unnumbered backlog. Do not edit V1–V7.
 
 Canonical fingerprint input: menu date ID, pickup window ID, trimmed order notes, and each item's offering ID, quantity, sorted option ID set, and trimmed line notes, with items sorted by `(offeringId, sorted option IDs, notes)`. Recompute after duplicate-line normalization. The fingerprint is an observability signal only.
 
@@ -134,7 +134,7 @@ Canonical fingerprint input: menu date ID, pickup window ID, trimmed order notes
 - [x] Replay audit contains no secrets, full emails, full phone numbers, or free-text reasons. Evidence: `OrderService.replayAuditPayload`, `OrderReplayAuditPayloadTest`.
 - [x] Full opt-out suppresses all customer messages, including previously exempt notices. Evidence: `NotificationService`, `NotificationIntegrationTest`; `ORDER_PAID` admin email retained.
 - [x] Admin phone/email destinations masked in API and logs. Evidence: `NotificationApi.Mask`, `NotificationServiceAdminAlertTest`, sender tests.
-- [x] No FCM credentials, tokens, or service-account JSON in repo/env/runtime. Evidence: code/config/OpenAPI scans clean; dead DB columns routed to S10.
+- [x] No FCM credentials, tokens, or service-account JSON in repo/env/runtime. Evidence: code/config/OpenAPI scans clean; dead DB columns routed to unnumbered backlog.
 - [x] Cloudflare handles HTTPS certificates; no origin cert or ACME artifacts. Evidence: one-hostname tunnel/deploy docs; no origin cert config retained.
 - [x] Secrets still mode `600` and gitignored; US geo rule and origin check verified. Evidence: `infra/setup-alpine.sh`, `.gitignore`, `EdgeSecurityIntegrationTest`; live geo/origin probe waived below.
 - [x] Proxmox backup scope verified to include Docker volumes; secrets recoverable by owner. Evidence: owner-scoped waiver below; in-repo backup/restore tooling removed.
@@ -179,9 +179,14 @@ Proposed backlog routes are placeholders; create specs if work starts.
 | Ops-only | Store bootstrap password/recovery codes off-repo; upload device CA to Cloudflare; verify Proxmox snapshot contains Docker volumes | `S2:290`, `S6:352`, `S7:338` |
 | Ops-only (S8 manual waiver) | Execute and record Cloudflare path-mTLS block/verified-allow, `/admin/v1/devices/pair` exemption + rate-limit, non-US geo 403, external-origin block, and pairing probes. Agent environment cannot reach Cloudflare or the LXC; static config/tests pass, live probes routed to owner before prod cutover. | This spec: AC10, test plan "Manual"; `infra/runbooks/cloudflare-tunnel.md`, `infra/runbooks/cloudflare-mtls-ca.md` |
 | Ops-only (S8 LXC smoke waiver) | On owner LXC, run `git pull` + `docker compose up -d --build`; record api/postgres/web/cloudflared healthy and Proxmox snapshot volume scope. Agent environment verified compose syntax and remaining shell scripts only. | This spec: AC12, DoD; `infra/runbooks/deploy.md` |
-| S9 edge hardening | Decode-safe path checks for encoded `%3b`, dot-slash and double-slash variants. Origin fails closed today (404/no leak) for `/admin/v1;x/**` via `RequestAuthenticationFilter`, but the raw `;` guard and Cloudflare `contains ";"`, `/api/v1/` WAF prefixes do not match encoded forms. Align edge and origin rules and add a probe; do not treat as an auth bypass in S8. | S8 security gate warning; `RequestAuthenticationFilter.java:59-65`, `EdgeRequestFilter.java:36-37`, `infra/runbooks/cloudflare-mtls-ca.md:28-36` |
-| S9 | Remove dead `application-staging.yml` and residual `staging` profile branches (`@Profile({"staging","prod"})`, `ProductionConfigValidator`, `ApiExceptionHandler`) once owner confirms no staging activation is needed; S8 removed staging compose/deploy but deliberately left profile code intact. | S8 security gate warning; `server/src/main/resources/application-staging.yml`, `ProviderOtpSender.java:18`, `ProductionConfigValidator.java:15` |
-| S9 | Local profile logs OTP plaintext by design (`docs/specs/README.md` local behavior) — confirm `LocalOtpSender` cannot activate under `prod` and add the guard to the S7 checklist sign-off. | S8 security gate warning; `S6-notifications-payments.md:27`, `S7-hardening-deploy.md:60`, `docs/specs/README.md:195-201` |
+| Edge hardening (accepted, unnumbered backlog) | Decode-safe path checks for encoded `%3b`, dot-slash and double-slash variants. Origin fails closed today (404/no leak) for `/admin/v1;x/**` via `RequestAuthenticationFilter`, but the raw `;` guard and Cloudflare `contains ";"`, `/api/v1/` WAF prefixes do not match encoded forms. Not changed in S9; remains unnumbered backlog. | S8 security gate warning; `RequestAuthenticationFilter.java:59-65`, `EdgeRequestFilter.java:36-37`, `infra/runbooks/cloudflare-mtls-ca.md:28-36` |
+| Staging cleanup (routed, not started, unnumbered backlog) | Remove dead `application-staging.yml` and residual `staging` profile branches once owner confirms no staging activation is needed; S8 removed staging compose/deploy but deliberately left profile code intact. S9 added a guard that fails startup if `dummy` is combined with `prod` or `staging`; staging removal stays unnumbered backlog. | S8 security gate warning; `server/src/main/resources/application-staging.yml`, `ProviderOtpSender.java:18`, `ProductionConfigValidator.java:15`, `DummyProfileGuard.java` |
+| Local OTP log (accepted, unnumbered backlog) | Local profile logs OTP plaintext by design (`docs/specs/README.md` local behavior). `LocalOtpSender` profile stayed `local,test`; dummy uses a separate `DummyOtpSender`. Prod/staging still use `ProviderOtpSender`; S7 checklist sign-off remains owner-owned. | S8 security gate warning; `S6-notifications-payments.md:27`, `S7-hardening-deploy.md:60`, `docs/specs/README.md:195-201`, `LocalOtpSender.java`, `DummyOtpSender.java` |
+| S9 | Prometheus on management port 9090, seven unlabeled committed-transition counters, and host-firewall CIDR docs. | `S9-observability-audience-preview-test-image.md`, `infra/compose.prod.yml`, `infra/runbooks/deploy.md` |
+| S9 | Authoritative masked recipient preview shared with enqueue via `NotificationAudienceResolver`; no outbox/audit/state side effects. | `S9-observability-audience-preview-test-image.md`, `NotificationPreviewIntegrationTest.java` |
+| S9 | Dummy image with embedded PostgreSQL, fixed API-seeded constants, local senders, no DB port, no volume. | `S9-observability-audience-preview-test-image.md`, `server/README.md`, `DummyProfileIntegrationTest.java` |
+| Ops-only (S9 manual waiver) | Execute and record allowed/blocked tcp/9090 scrape probes, Cloudflare `/actuator/**` 404 probe, and `docker build --target dummy` container smoke. Agent environment verified compose syntax, shell syntax, static config, and Spring integration tests only; live firewall, edge, and image-build probes are owner-owned before cutover. | S9 spec: AC1–AC3, AC12–AC14, test plan; `infra/runbooks/deploy.md`, `infra/runbooks/cloudflare-tunnel.md` |
+| S9 `MENU_CANCELLED` parity (accepted, unnumbered backlog) | Preview resolves the shared enqueue audience for `MENU`/`MENU_DATE`, but `OrderService.cancelForMenuDate` invokes the enqueue only when a `PENDING`/`ACCEPTED`/`READY` order exists, while the resolver also counts `COMPLETED` active-order customers and opted-in customers without an active order. S9 preserves enqueue behavior byte-for-byte per ordered task 3; changing cancellation triggers or the shared audience needs an owner decision and a new spec. | S9 gate `gap-analysis`; `OrderService.java:632-640`, `NotificationRules.java:19-20`, `NotificationAudienceResolver.java:156-193` |
 | Process (closed) | Initial `/phase-gate S8` `spec-compliance` blockers fixed; formal rerun completed with PASS. No process item remains. | S8 gate results table above |
 | Process (accepted) | Commit `cd41fb9` uses a non-Conventional subject (`phase8`). Owner chose to keep local hashes unchanged; `5ae0c5b` and later commits follow Conventional Commits. | `docs/specs/README.md` commit-style rule; code-review Standards axis |
 
@@ -192,9 +197,9 @@ Migration applies on S7 and empty databases, all acceptance criteria pass, S1–
 ## Handoff notes
 
 - Firebase is Google's app platform; FCM (Firebase Cloud Messaging) was the free push channel used only to tell the admin about new orders. It required a Firebase project, service-account JSON, and Android token registration. Those are gone in S8; Mailgun email and optional Textbee SMS cover admin alerts.
-- Textbee sends SMS through a paired Android device, so delivery depends on that device being powered and online. AWS SNS is more robust but US SMS needs A2P 10DLC registration (one-time vetting fees, low-volume campaign ~$2/month, number lease, plus per-message fees). S12 owns that review; no change now.
+- Textbee sends SMS through a paired Android device, so delivery depends on that device being powered and online. AWS SNS is more robust but US SMS needs A2P 10DLC registration (one-time vetting fees, low-volume campaign ~$2/month, number lease, plus per-message fees). Unnumbered backlog owns that review; no change now.
 - `client_submitted_at` is diagnostic. It is stored and audited, but the server's `createdAt` and idempotency key remain authoritative. A user who wants to change an order cancels and re-orders.
 - One hostname means Cloudflare rules are path-scoped; do not reintroduce the pair or admin-api hostnames without a spec update.
 - Proxmox container backups include the Docker volumes only if they live inside the LXC; verify once and keep the device CA key and `.env` recoverable outside the snapshot.
 - With one hostname, the tunnel routes `/api` and `/admin/v1` straight to `api:8080`; W8's nginx `/api` proxy stays for local development and is not used for production ingress.
-- Full-stack HTTPS acceptance remains blocked on W8's web image; S9 owns that verification after W8 lands.
+- Full-stack HTTPS acceptance remains blocked on W8's web image; S9 routes that verification to the owner after W8 lands.

@@ -18,7 +18,7 @@ sh infra/scripts/status.sh
 LOG_LINES=500 sh infra/scripts/logs.sh postgres api web cloudflared > /tmp/incident-logs.txt
 docker compose -f infra/compose.prod.yml --env-file /opt/bethanys-bakery/.env stats --no-stream
 df -h / /opt/bethanys-bakery
-curl -fsS https://bakery.cherry-home.com/actuator/health 2>/dev/null || true
+curl -fsS http://127.0.0.1:9090/actuator/health 2>/dev/null || true
 ```
 Preserve evidence before restarting: copy `/tmp/incident-logs.txt` to the
 ticket, capture `docker inspect` for affected containers, and note recent
