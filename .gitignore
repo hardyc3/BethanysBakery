@@ -29,6 +29,7 @@ media/
 *.log
 
 # Android
+.kotlin/
 local.properties
 *.keystore
 *.jks

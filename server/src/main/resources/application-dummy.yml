@@ -31,7 +31,7 @@ bakery:
     admin-mtls-local-bypass: true
     app-public-base-url: http://localhost:8080
     app-admin-api-url: http://localhost:8080/admin/v1
-    app-pair-url: http://localhost:8080/pair
+    app-pair-url: http://localhost:8080/admin/v1/devices/pair
     otp-ttl: PT10M
     otp-max-attempts: 5
     otp-resend-seconds: 1

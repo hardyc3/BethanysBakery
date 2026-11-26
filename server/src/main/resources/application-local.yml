@@ -25,5 +25,5 @@ bakery:
     app-encryption-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
     admin-mtls-local-bypass: true
     app-public-base-url: http://localhost:5173
-    app-admin-api-url: https://localhost:8443
-    app-pair-url: https://pair.localhost:8443/pair
+    app-admin-api-url: https://localhost:8443/admin/v1
+    app-pair-url: https://localhost:8443/admin/v1/devices/pair

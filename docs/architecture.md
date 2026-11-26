@@ -193,8 +193,9 @@ is unauthenticated at the edge and HMAC-signature-verified at the origin.
 Cloudflare Tunnel is the only *public* ingress. The sole LXC host port is
 `0.0.0.0:9090/actuator/prometheus` for the Grafana LXC; the owner firewall allows
 only `PROMETHEUS_SCRAPE_CIDR`. There is no `/actuator/**` edge route.
-Cloudflare handles HTTPS certificates. No hostname is hardcoded in app code;
-`EdgeRequestFilter` matches paths only.
+Cloudflare handles HTTPS certificates. No hostname is hardcoded in production
+Kotlin or Java source; Android URLs come from build-time config and
+`EdgeRequestFilter` matches paths only. Test fixtures may name the public host.
 
 ## 8. Docker Compose topology
 

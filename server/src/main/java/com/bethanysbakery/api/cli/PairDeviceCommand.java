@@ -27,10 +27,20 @@ public class PairDeviceCommand {
         System.out.println("Expires in: 15 minutes");
         System.out.println("Pair URL: " + (pairUrl == null || pairUrl.isBlank() ? "(APP_PAIR_URL not configured)" : pairUrl));
         System.out.println("Admin API URL: " + (adminApiUrl == null || adminApiUrl.isBlank() ? "(APP_ADMIN_API_URL not configured)" : adminApiUrl));
-        if (pairUrl != null && !pairUrl.isBlank()) {
-            String qrValue = pairUrl + (pairUrl.contains("?") ? "&" : "?") + "code=" + code;
+        if (pairUrl != null && !pairUrl.isBlank() && adminApiUrl != null && !adminApiUrl.isBlank()) {
+            String qrValue = "{\"v\":1,\"pairUrl\":\"" + jsonEscape(pairUrl)
+                    + "\",\"apiUrl\":\"" + jsonEscape(adminApiUrl)
+                    + "\",\"code\":\"" + jsonEscape(code) + "\"}";
             System.out.println(qr.render(qrValue));
         }
         return 0;
+    }
+
+    private static String jsonEscape(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
     }
 }
